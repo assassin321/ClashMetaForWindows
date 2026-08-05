@@ -1,0 +1,86 @@
+appId: meta.clash.app
+productName: Clash Meta For Windows
+directories:
+  buildResources: build
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!aur/*'
+  - '!images/*'
+  - '!scripts/*'
+  - '!extra/*'
+  - '!tailwind.config.js'
+  - '!postcss.config.js'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+extraResources:
+  - from: './extra/'
+    to: ''
+protocols:
+  name: 'Clash Meta For Windows URI Scheme'
+  schemes:
+    - 'clash'
+    - 'mihomo'
+win:
+  target:
+    - nsis
+    - 7z
+  artifactName: clash-meta-windows-${version}-${arch}-portable.${ext}
+nsis:
+  artifactName: clash-meta-windows-${version}-${arch}-setup.${ext}
+  uninstallDisplayName: ${productName}
+  allowToChangeInstallationDirectory: true
+  oneClick: false
+  perMachine: true
+  createDesktopShortcut: always
+mac:
+  target:
+    - pkg
+  entitlementsInherit: build/entitlements.mac.plist
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  extendInfo:
+    - NSCameraUsageDescription: Application requests access to the device's camera.
+    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
+    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
+    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+  notarize: false
+  artifactName: clash-meta-macos-${version}-${arch}.${ext}
+pkg:
+  allowAnywhere: false
+  allowCurrentUserHome: false
+  isRelocatable: false
+  background:
+    alignment: bottomleft
+    file: build/background.png
+linux:
+  executableName: clash-meta
+  icon: build/icon.png
+  desktop:
+    entry:
+      Name: Clash Meta For Windows
+      GenericName: Proxy Client
+      Comment: A GUI client based on Mihomo
+      MimeType: 'x-scheme-handler/clash;x-scheme-handler/mihomo'
+      Keywords: proxy;clash;mihomo;vpn;
+      StartupWMClass: clash-meta
+      Icon: clash-meta
+  target:
+    - deb
+    - rpm
+  maintainer: assassin321
+  category: Utility
+  artifactName: clash-meta-linux-${version}-${arch}.${ext}
+deb:
+  afterInstall: 'build/linux/postinst'
+  afterRemove: 'build/linux/postuninst'
+rpm:
+  afterInstall: 'build/linux/postinst'
+  afterRemove: 'build/linux/postuninst'
+  fpm:
+    - '--rpm-rpmbuild-define'
+    - '_build_id_links none'
+npmRebuild: true
+publish: []

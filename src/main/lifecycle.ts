@@ -1,0 +1,144 @@
+import { spawn, exec, execFileSync } from 'child_process'
+import { promisify } from 'util'
+import { stat } from 'fs/promises'
+import { existsSync } from 'fs'
+import { app, powerMonitor } from 'electron'
+import { stopCore, cleanupCoreWatcher } from './core/manager'
+import { primeAdminPrivilegesCache } from './core/admin'
+import { triggerSysProxy, disableSysProxySync } from './sys/sysproxy'
+import { exePath } from './utils/dirs'
+
+export function customRelaunch(): void {
+  const script = `while kill -0 ${process.pid} 2>/dev/null; do
+  sleep 0.1
+done
+${process.argv.join(' ')} & disown
+exit
+`
+  spawn('sh', ['-c', script], {
+    detached: true,
+    stdio: 'ignore'
+  })
+}
+
+export async function fixUserDataPermissions(): Promise<void> {
+  if (process.platform !== 'darwin') return
+
+  const userDataPath = app.getPath('userData')
+  if (!existsSync(userDataPath)) return
+
+  try {
+    const stats = await stat(userDataPath)
+    const currentUid = process.getuid?.() || 0
+
+    if (stats.uid === 0 && currentUid !== 0) {
+      const execPromise = promisify(exec)
+      const username = process.env.USER || process.env.LOGNAME
+      if (username) {
+        await execPromise(`chown -R "${username}:staff" "${userDataPath}"`)
+        await execPromise(`chmod -R u+rwX "${userDataPath}"`)
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export function setupPlatformSpecifics(): void {
+  if (process.platform === 'linux') {
+    app.relaunch = customRelaunch
+  }
+
+  // https://github.com/electron/electron/issues/43278
+  // https://github.com/electron/electron/issues/36698
+  const electronMajor = parseInt(process.versions.electron.split('.')[0], 10) || 0
+  if (process.platform === 'win32' && !exePath().startsWith('C') && electronMajor < 38) {
+    app.commandLine.appendSwitch('in-process-gpu')
+  }
+
+  if (process.platform === 'win32') {
+    const elevated = isWindowsElevatedSync()
+    if (elevated) {
+      primeAdminPrivilegesCache(true)
+      app.commandLine.appendSwitch('disable-gpu-sandbox')
+    }
+  }
+}
+
+function isWindowsElevatedSync(): boolean {
+  if (process.platform !== 'win32') return false
+  try {
+    execFileSync('fltmc', [], { stdio: 'ignore', windowsHide: true, timeout: 800 })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function setupAppLifecycle(): void {
+  let sysProxyDisabled = false
+  let isQuitting = false
+
+  const withTimeout = async (promise: Promise<void>, timeout: number): Promise<void> => {
+    let timeoutId: NodeJS.Timeout | null = null
+
+    try {
+      await Promise.race([
+        promise,
+        new Promise<void>((resolve) => {
+          timeoutId = setTimeout(resolve, timeout)
+        })
+      ])
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }
+
+  const cleanupBeforeExit = async (): Promise<void> => {
+    if (isQuitting) return
+    isQuitting = true
+
+    cleanupCoreWatcher()
+
+    if (process.platform !== 'darwin') {
+      disableSysProxySync()
+      sysProxyDisabled = true
+    }
+
+    await withTimeout(
+      Promise.allSettled([
+        triggerSysProxy(false).then(() => {
+          sysProxyDisabled = true
+        }),
+        stopCore()
+      ]).then(() => {}),
+      1200
+    )
+  }
+
+  app.on('window-all-closed', () => {
+    // Keep the app and tray alive when lightweight tray mode destroys the renderer window.
+  })
+
+  app.on('before-quit', async (e) => {
+    e.preventDefault()
+    await cleanupBeforeExit()
+    app.exit()
+  })
+
+  powerMonitor.on('shutdown', async () => {
+    await cleanupBeforeExit()
+    app.exit()
+  })
+
+  app.on('will-quit', () => {
+    if (!sysProxyDisabled) {
+      disableSysProxySync()
+    }
+  })
+}
+
+export function getSystemLanguage(): 'zh-CN' | 'en-US' {
+  const locale = app.getLocale()
+  return locale.startsWith('zh') ? 'zh-CN' : 'en-US'
+}
