@@ -43,6 +43,7 @@ interface MenuItem {
   color: 'default' | 'danger'
   className: string
 }
+
 const ProfileItem: React.FC<Props> = (props) => {
   const { t } = useTranslation()
   const {
@@ -295,30 +296,30 @@ const ProfileItem: React.FC<Props> = (props) => {
                 {info?.name}
               </h3>
 
-                <Dropdown isOpen={dropdownOpen} onOpenChange={setDropdownOpen}>
-                  <DropdownTrigger>
-                    <Button isIconOnly size="sm" variant="light" color="default">
-                      <IoMdMore
-                        color="default"
-                        className={`text-[24px] ${isCurrent ? 'text-primary-foreground' : 'text-foreground'}`}
-                      />
-                    </Button>
-                  </DropdownTrigger>
-                  <DropdownMenu onAction={onMenuAction}>
-                    {menuItems.map((item) => (
-                      <DropdownItem
-                        showDivider={item.showDivider}
-                        key={item.key}
-                        color={item.color}
-                        className={item.className}
-                      >
-                        {item.label}
-                      </DropdownItem>
-                    ))}
-                  </DropdownMenu>
-                </Dropdown>
-              </div>
+              <Dropdown isOpen={dropdownOpen} onOpenChange={setDropdownOpen}>
+                <DropdownTrigger>
+                  <Button isIconOnly size="sm" variant="light" color="default">
+                    <IoMdMore
+                      color="default"
+                      className={`text-[24px] ${isCurrent ? 'text-primary-foreground' : 'text-foreground'}`}
+                    />
+                  </Button>
+                </DropdownTrigger>
+                <DropdownMenu onAction={onMenuAction}>
+                  {menuItems.map((item) => (
+                    <DropdownItem
+                      showDivider={item.showDivider}
+                      key={item.key}
+                      color={item.color}
+                      className={item.className}
+                    >
+                      {item.label}
+                    </DropdownItem>
+                  ))}
+                </DropdownMenu>
+              </Dropdown>
             </div>
+
             {info.type === 'remote' && extra && (
               <div
                 className={`mt-2 flex justify-between ${isCurrent ? 'text-primary-foreground' : 'text-foreground'}`}

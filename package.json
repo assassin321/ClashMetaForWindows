@@ -1,6 +1,6 @@
 {
   "name": "clash-meta",
-  "version": "2.0.1",
+  "version": "2.0.0",
   "description": "Clash Meta For Windows",
   "type": "module",
   "main": "./out/main/index.js",

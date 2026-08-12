@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   restartCore: vi.fn()
 }))
 
-vi.mock('electron', () => ({ app: { getVersion: () => '2.0.1' } }))
+vi.mock('electron', () => ({ app: { getVersion: () => '2.0.0' } }))
 vi.mock('i18next', () => ({ default: { t: (key: string) => key } }))
 vi.mock('axios', () => ({ default: { get: mocks.axiosGet } }))
 vi.mock('../utils/age', () => ({
@@ -53,7 +53,7 @@ vi.mock('./app', () => ({
     Promise.resolve({
       core: 'mihomo',
       subscriptionTimeout: 30000,
-      userAgent: 'clash.meta/v2.0.1 (clash.meta)'
+      userAgent: 'clash.meta/v2.0.0 (clash.meta)'
     })
 }))
 vi.mock('./controledMihomo', () => ({
