@@ -1,0 +1,44 @@
+pkgname=clash-meta
+pkgver=0.1.3
+pkgrel=1
+pkgdesc="Another Mihomo GUI."
+arch=('x86_64' 'aarch64')
+url="https://github.com/assassin321/ClashMetaForWindows"
+license=('GPL3')
+conflicts=("$pkgname-git" "$pkgname-bin" "$pkgname-electron" "$pkgname-electron-bin")
+depends=('gtk3' 'libnotify' 'nss' 'libxss' 'libxtst' 'xdg-utils' 'at-spi2-core' 'util-linux-libs' 'libsecret')
+optdepends=('libappindicator-gtk3: Allow clash-meta to extend a menu via Ayatana indicators in Unity, KDE or Systray (GTK+ 3 library).')
+makedepends=('nodejs' 'pnpm' 'libxcrypt-compat')
+install=$pkgname.install
+source=(
+    "${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz"
+    "${pkgname}.sh"
+)
+sha256sums=("52d761e9432e17477acb8adb5744676df946476e0eb5210fee2b6d45f497f218"
+"242609b1259e999e944b7187f4c03aacba8134a7671ff3a50e2e246b4c4eff48")
+options=('!lto')
+
+prepare(){
+    cd $srcdir/clash-meta-${pkgver}
+    sed -i "s/productName: Clash Meta For Windows/productName: clash-meta/" electron-builder.yml
+    pnpm install
+}
+
+build(){
+    cd $srcdir/clash-meta-${pkgver}
+    pnpm build:linux deb
+}
+
+package() {
+	cd $srcdir/clash-meta-${pkgver}/dist
+    bsdtar -xf clash-meta-linux-${pkgver}*.deb
+    bsdtar -xf data.tar.xz -C "${pkgdir}/"
+    chmod +x ${pkgdir}/opt/clash-meta/clash-meta
+    chmod +sx ${pkgdir}/opt/clash-meta/resources/sidecar/mihomo
+    chmod +sx ${pkgdir}/opt/clash-meta/resources/sidecar/mihomo-alpha
+    chmod +sx ${pkgdir}/opt/clash-meta/resources/sidecar/mihomo-smart
+    install -Dm755 "${srcdir}/../${pkgname}.sh" "${pkgdir}/usr/bin/${pkgname}"
+    sed -i '3s!/opt/clash-meta/clash-meta!clash-meta!' "${pkgdir}/usr/share/applications/${pkgname}.desktop"
+
+    chown -R root:root ${pkgdir}
+}
