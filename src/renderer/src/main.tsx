@@ -62,7 +62,6 @@ init().then(() => {
                       </GroupsProvider>
                     </OverrideConfigProvider>
                   </ProfileConfigProvider>
-                  </ProfileConfigProvider>
                 </ControledMihomoConfigProvider>
               </AppConfigProvider>
             </HashRouter>
