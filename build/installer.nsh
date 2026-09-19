@@ -1,0 +1,131 @@
+!ifndef BUILD_UNINSTALLER
+!include FileFunc.nsh
+!insertmacro DriveSpace
+
+!define SPARKLE_MIN_TEMP_SPACE_MB 1024
+
+!macro customHeader
+  Var clashmetafwServiceWasRunning
+!macroend
+
+!macro EnsureTempSpace
+  ${DriveSpace} "$TEMP" "/D=F /S=M" $R0
+  ${If} $R0 < ${SPARKLE_MIN_TEMP_SPACE_MB}
+    MessageBox MB_ICONSTOP "Not enough space in the temp directory. Free at least ${SPARKLE_MIN_TEMP_SPACE_MB} MB on the temp drive or set TEMP/TMP to another drive, then run the installer again."
+    Abort
+  ${EndIf}
+!macroend
+
+!macro ServiceOutputContains NEEDLE RESULT
+  StrCpy ${RESULT} "false"
+  StrCpy $R5 0
+  StrLen $R6 $R3
+  StrLen $R8 "${NEEDLE}"
+  ${Do}
+    StrCpy $R9 $R3 $R8 $R5
+    ${If} $R9 == "${NEEDLE}"
+      StrCpy ${RESULT} "true"
+      ${Break}
+    ${EndIf}
+    IntOp $R5 $R5 + 1
+  ${LoopUntil} $R5 >= $R6
+!macroend
+
+!macro QueryClashMetaFWServiceState RESULT
+  nsExec::ExecToStack '"$SYSDIR\sc.exe" query ClashMetaFWService'
+  Pop $R2
+  Pop $R3
+
+  StrCpy ${RESULT} "not-installed"
+  ${If} $R2 == 0
+    !insertmacro ServiceOutputContains "RUNNING" $R4
+    ${If} $R4 == "true"
+      StrCpy ${RESULT} "running"
+    ${Else}
+      !insertmacro ServiceOutputContains "STOP_PENDING" $R4
+      ${If} $R4 == "true"
+        StrCpy ${RESULT} "stop-pending"
+      ${Else}
+        !insertmacro ServiceOutputContains "STOPPED" $R4
+        ${If} $R4 == "true"
+          StrCpy ${RESULT} "stopped"
+        ${Else}
+          StrCpy ${RESULT} "unknown"
+        ${EndIf}
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+!macro WaitClashMetaFWServiceStopped
+  StrCpy $R0 0
+  ${Do}
+    !insertmacro QueryClashMetaFWServiceState $R1
+    ${If} $R1 == "stopped"
+    ${OrIf} $R1 == "not-installed"
+      ${Break}
+    ${EndIf}
+    Sleep 500
+    IntOp $R0 $R0 + 1
+  ${LoopUntil} $R0 >= 30
+
+  !insertmacro QueryClashMetaFWServiceState $R1
+  ${If} $R1 != "stopped"
+  ${AndIf} $R1 != "not-installed"
+    MessageBox MB_ICONSTOP "ClashMetaFWService is still running. Please stop the service and run the installer again."
+    Abort
+  ${EndIf}
+!macroend
+
+!macro DisableSysProxy
+  StrCpy $R1 "$INSTDIR\resources\files\clashmetafw-service.exe"
+  ${If} ${FileExists} "$R1"
+    DetailPrint "Disabling system proxy: $R1"
+    nsExec::ExecToLog '"$R1" sysproxy disable'
+    Pop $R2
+    ${If} $R2 != 0
+      DetailPrint "Disable system proxy exited with code $R2"
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+!macro StopClashMetaFWServiceIfRunning
+  !insertmacro QueryClashMetaFWServiceState $R1
+
+  ${If} $R1 != "stopped"
+  ${AndIf} $R1 != "not-installed"
+    StrCpy $clashmetafwServiceWasRunning "true"
+    DetailPrint "Stopping Clash Meta For Windows service"
+    nsExec::ExecToStack '"$SYSDIR\sc.exe" stop ClashMetaFWService'
+    Pop $R2
+    Pop $R3
+    !insertmacro WaitClashMetaFWServiceStopped
+    !insertmacro DisableSysProxy
+  ${EndIf}
+!macroend
+
+!macro customInit
+  !insertmacro EnsureTempSpace
+  StrCpy $clashmetafwServiceWasRunning "false"
+  !insertmacro StopClashMetaFWServiceIfRunning
+!macroend
+
+!macro customInstall
+  ${ifNot} ${isUpdated}
+    CreateShortcut "$DESKTOP\${PRODUCT_FILENAME}.lnk" "$INSTDIR\${PRODUCT_FILENAME}.exe"
+  ${endIf}
+
+  ${If} $clashmetafwServiceWasRunning == "true"
+    StrCpy $R1 "$INSTDIR\resources\files\clashmetafw-service.exe"
+    ${If} ${FileExists} "$R1"
+      DetailPrint "Starting Clash Meta For Windows service: $R1"
+      nsExec::ExecToLog '"$R1" service start'
+      Pop $R2
+      ${If} $R2 != 0
+        DetailPrint "Clash Meta For Windows service start exited with code $R2"
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+!endif

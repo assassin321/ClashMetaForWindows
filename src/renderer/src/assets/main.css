@@ -1,0 +1,200 @@
+@import 'tailwindcss';
+@plugin './hero.mjs';
+@import '@heroui-v3/styles';
+@import './main-compatible.css';
+@source '../../../../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}';
+@custom-variant dark (&:is(.dark *));
+
+@keyframes proxy-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes proxy-tooltip-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes proxy-tooltip-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@font-face {
+  font-family: 'twemoji';
+  src: url('./twemoji.ttf');
+}
+
+.driver-popover {
+  background-color: hsl(var(--heroui-content2)) !important;
+  border-radius: 8px !important;
+  color: hsl(var(--heroui-foreground)) !important;
+}
+
+.driver-popover a {
+  color: hsl(var(--heroui-primary)) !important;
+  text-decoration: underline !important;
+}
+
+.driver-popover-close-btn {
+  color: hsl(var(--heroui-foreground)) !important;
+}
+
+.driver-popover-progress-text {
+  color: hsl(var(--heroui-default-500)) !important;
+}
+
+.driver-popover-prev-btn {
+  color: white !important;
+  text-shadow: none !important;
+  border: none !important;
+  padding: 8px !important;
+  border-radius: 5px !important;
+  font-size: 12px !important;
+  background-color: hsl(var(--heroui-primary)) !important;
+}
+
+.driver-popover-next-btn {
+  color: white !important;
+  text-shadow: none !important;
+  border: none !important;
+  padding: 8px !important;
+  border-radius: 5px !important;
+  font-size: 12px !important;
+  background-color: hsl(var(--heroui-primary)) !important;
+}
+
+.driver-popover-arrow-side-bottom {
+  border-bottom-color: hsl(var(--heroui-content2)) !important;
+}
+
+.driver-popover-arrow-side-top {
+  border-top-color: hsl(var(--heroui-content2)) !important;
+}
+
+.driver-popover-arrow-side-left {
+  border-left-color: hsl(var(--heroui-content2)) !important;
+}
+
+.driver-popover-arrow-side-right {
+  border-right-color: hsl(var(--heroui-content2)) !important;
+}
+
+.app-nodrag {
+  -webkit-app-region: none;
+}
+.app-drag {
+  -webkit-app-region: drag;
+}
+
+.touch-sortable-card {
+  touch-action: pan-y;
+}
+
+.sysproxy-card,
+.tun-card,
+.dns-card,
+.sniff-card,
+.proxy-card,
+.conn-card,
+.profile-card,
+.mihomo-core-card,
+.rule-card,
+.resource-card,
+.override-card,
+.log-card,
+.substore-card {
+  touch-action: pan-y;
+}
+
+.app-drag > .header {
+  width: auto;
+  padding: 0;
+  text-align: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+
+* {
+  user-select: none;
+}
+
+*:focus {
+  outline: none;
+  outline-width: 0;
+  outline-color: transparent;
+}
+
+.flag-emoji {
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Oxygen,
+    Ubuntu,
+    Cantarell,
+    'Open Sans',
+    'Helvetica Neue',
+    sans-serif,
+    'Apple Color Emoji',
+    'twemoji';
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-corner {
+  background-color: transparent;
+}
+
+/* Light mode */
+@media (prefers-color-scheme: light) {
+  *::-webkit-scrollbar-thumb {
+    background: #c0c1c58f;
+    border-radius: 5px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: #c0c1c550;
+  }
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  *::-webkit-scrollbar-thumb {
+    background: #c0c1c550;
+    border-radius: 5px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: #c0c1c58f;
+  }
+}

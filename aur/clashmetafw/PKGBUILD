@@ -1,0 +1,44 @@
+pkgname=clashmetafw
+pkgver=1.26.7
+pkgrel=1
+pkgdesc="Another Mihomo GUI"
+arch=('x86_64' 'aarch64')
+url="https://github.com/assassin321/ClashMetaForWindows"
+license=('GPL-3.0-only')
+conflicts=("$pkgname-git" "$pkgname-bin" "$pkgname-rolling-bin" "$pkgname-electron" "$pkgname-electron-bin" "$pkgname-electron-git")
+depends=('alsa-lib' 'gtk3' 'libnotify' 'nss' 'libxss' 'libxtst' 'xdg-utils' 'at-spi2-core' 'util-linux-libs' 'libsecret')
+optdepends=('libappindicator-gtk3: Allow clashmetafw to extend a menu via Ayatana indicators in Unity, KDE or Systray (GTK+ 3 library).')
+makedepends=('nodejs' 'pnpm' 'libxcrypt-compat' 'libarchive')
+install=$pkgname.install
+source=(
+    "${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/${pkgver}.tar.gz"
+    "${pkgname}.sh"
+)
+sha256sums=("28e4a721d1bc4cf25934eb7ddfd7309587b8ea5c4771baba1137b4b4ae77aaa2"
+"03eb601fe981716e90f9170eeb36a2e7938587f05a1bdaa09adadb1229c77a0a")
+options=('!debug' '!lto')
+
+prepare(){
+    cd $srcdir/${pkgname}-${pkgver}
+    sed -i "s/productName: Clash Meta For Windows/productName: clashmetafw/" electron-builder.yml
+    pnpm install
+}
+
+build(){
+    cd $srcdir/${pkgname}-${pkgver}
+    pnpm build:linux deb
+}
+
+package() {
+	cd $srcdir/${pkgname}-${pkgver}/dist
+    bsdtar -xf clashmetafw-linux-${pkgver}*.deb
+    bsdtar -xf data.tar.xz -C "${pkgdir}/"
+    chmod +x ${pkgdir}/opt/clashmetafw/clashmetafw
+    chmod +x ${pkgdir}/opt/clashmetafw/resources/files/clashmetafw-service
+    chmod +sx ${pkgdir}/opt/clashmetafw/resources/sidecar/mihomo
+    chmod +sx ${pkgdir}/opt/clashmetafw/resources/sidecar/mihomo-alpha
+    install -Dm755 "${srcdir}/../${pkgname}.sh" "${pkgdir}/usr/bin/${pkgname}"
+    sed -i '3s!/opt/clashmetafw/clashmetafw!clashmetafw!' "${pkgdir}/usr/share/applications/${pkgname}.desktop"
+
+    chown -R root:root ${pkgdir}
+}

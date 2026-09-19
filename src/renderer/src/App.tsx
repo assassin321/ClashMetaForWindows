@@ -1,0 +1,397 @@
+import { useTheme } from 'next-themes'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { NavigateFunction, useLocation, useNavigate, useRoutes } from 'react-router-dom'
+import OutboundModeSwitcher from '@renderer/components/sider/outbound-mode-switcher'
+import { Button, Divider } from '@heroui/react'
+import { IoSettings } from 'react-icons/io5'
+import routes, { useDeferredRoutePreload } from '@renderer/routes'
+import { useAppConfig } from '@renderer/hooks/use-app-config'
+import { applyTheme, checkUpdate, setNativeTheme, setTitleBarOverlay } from '@renderer/utils/ipc'
+import { platform } from '@renderer/utils/init'
+import { TitleBarOverlayOptions } from 'electron'
+import MihomoIcon from './components/base/mihomo-icon'
+import useSWR from 'swr'
+
+const ConfirmModal = lazy(() => import('@renderer/components/base/base-confirm'))
+const siderCardsPromise = import('@renderer/components/sider/sider-cards')
+const SiderCards = lazy(() => siderCardsPromise)
+const UpdaterButton = lazy(() => import('@renderer/components/updater/updater-button'))
+
+let navigate: NavigateFunction
+
+const App: React.FC = () => {
+  const { appConfig, patchAppConfig } = useAppConfig()
+  const {
+    appTheme = 'system',
+    customTheme,
+    useWindowFrame = false,
+    siderWidth = 250,
+    autoCheckUpdate,
+    updateChannel = 'stable',
+    showUpdateButtonAfterNotification = true,
+    disableAnimation = false
+  } = appConfig || {}
+  const narrowWidth = platform === 'darwin' ? 70 : 60
+  const [siderWidthValue, setSiderWidthValue] = useState(siderWidth)
+  const siderWidthValueRef = useRef(siderWidthValue)
+  const [resizing, setResizing] = useState(false)
+  const resizingRef = useRef(resizing)
+  const resizePointerIdRef = useRef<number | null>(null)
+  const { setTheme, systemTheme } = useTheme()
+  navigate = useNavigate()
+  const location = useLocation()
+  const page = useRoutes(routes)
+  useDeferredRoutePreload()
+
+  const setTitlebar = (): void => {
+    if (!useWindowFrame && platform !== 'darwin') {
+      const options = { height: 48 } as TitleBarOverlayOptions
+      try {
+        options.color = window.getComputedStyle(document.documentElement).backgroundColor
+        options.symbolColor = window.getComputedStyle(document.documentElement).color
+        setTitleBarOverlay(options)
+      } catch {
+        // ignore
+      }
+    }
+  }
+  const { data: latest } = useSWR(
+    autoCheckUpdate ? ['checkUpdate', updateChannel] : undefined,
+    autoCheckUpdate ? checkUpdate : (): undefined => {},
+    {
+      refreshInterval: 1000 * 60 * 10
+    }
+  )
+
+  useEffect(() => {
+    setSiderWidthValue(siderWidth)
+    siderWidthValueRef.current = siderWidth
+  }, [siderWidth])
+
+  useEffect(() => {
+    siderWidthValueRef.current = siderWidthValue
+    resizingRef.current = resizing
+  }, [siderWidthValue, resizing])
+
+  useEffect(() => {
+    const tourShown = window.localStorage.getItem('tourShown')
+    if (!tourShown) {
+      window.localStorage.setItem('tourShown', 'true')
+      import('@renderer/utils/driver').then(({ startTour }) => {
+        startTour(navigate)
+      })
+    }
+  }, [])
+
+  useEffect(() => {
+    setNativeTheme(appTheme)
+    setTheme(appTheme)
+    setTitlebar()
+  }, [appTheme, systemTheme])
+
+  useEffect(() => {
+    applyTheme(customTheme || 'default.css').then(() => {
+      setTitlebar()
+    })
+  }, [customTheme])
+
+  useEffect(() => {
+    window.addEventListener('pointermove', onResizeMove)
+    window.addEventListener('pointerup', onResizeEnd)
+    window.addEventListener('pointercancel', onResizeEnd)
+    return (): void => {
+      window.removeEventListener('pointermove', onResizeMove)
+      window.removeEventListener('pointerup', onResizeEnd)
+      window.removeEventListener('pointercancel', onResizeEnd)
+    }
+  }, [])
+
+  const updateSiderWidthFromClientX = (clientX: number): void => {
+    let nextWidth: number
+    if (clientX <= 150) {
+      nextWidth = narrowWidth
+    } else if (clientX <= 250) {
+      nextWidth = 250
+    } else if (clientX >= 400) {
+      nextWidth = 400
+    } else {
+      nextWidth = clientX
+    }
+
+    siderWidthValueRef.current = nextWidth
+    setSiderWidthValue(nextWidth)
+  }
+
+  const onResizeMove = (event: PointerEvent): void => {
+    if (!resizingRef.current) return
+    if (resizePointerIdRef.current !== null && event.pointerId !== resizePointerIdRef.current) {
+      return
+    }
+
+    event.preventDefault()
+    updateSiderWidthFromClientX(event.clientX)
+  }
+
+  const onResizeEnd = (event?: PointerEvent): void => {
+    if (
+      event &&
+      resizePointerIdRef.current !== null &&
+      event.pointerId !== resizePointerIdRef.current
+    ) {
+      return
+    }
+
+    if (resizingRef.current) {
+      setResizing(false)
+      patchAppConfig({ siderWidth: siderWidthValueRef.current })
+    }
+    resizePointerIdRef.current = null
+  }
+
+  const [showQuitConfirm, setShowQuitConfirm] = useState(false)
+  const [showProfileInstallConfirm, setShowProfileInstallConfirm] = useState(false)
+  const [showOverrideInstallConfirm, setShowOverrideInstallConfirm] = useState(false)
+  const [profileInstallData, setProfileInstallData] = useState<{
+    url: string
+    name?: string | null
+  }>()
+  const [overrideInstallData, setOverrideInstallData] = useState<{
+    url: string
+    name?: string | null
+  }>()
+
+  useEffect(() => {
+    const handleShowQuitConfirm = (): void => {
+      setShowQuitConfirm(true)
+    }
+    const handleShowProfileInstallConfirm = (
+      _event: unknown,
+      data: { url: string; name?: string | null }
+    ): void => {
+      setProfileInstallData(data)
+      setShowProfileInstallConfirm(true)
+    }
+    const handleShowOverrideInstallConfirm = (
+      _event: unknown,
+      data: { url: string; name?: string | null }
+    ): void => {
+      setOverrideInstallData(data)
+      setShowOverrideInstallConfirm(true)
+    }
+
+    window.electron.ipcRenderer.on('show-quit-confirm', handleShowQuitConfirm)
+    window.electron.ipcRenderer.on('show-profile-install-confirm', handleShowProfileInstallConfirm)
+    window.electron.ipcRenderer.on(
+      'show-override-install-confirm',
+      handleShowOverrideInstallConfirm
+    )
+
+    return (): void => {
+      window.electron.ipcRenderer.removeAllListeners('show-quit-confirm')
+      window.electron.ipcRenderer.removeAllListeners('show-profile-install-confirm')
+      window.electron.ipcRenderer.removeAllListeners('show-override-install-confirm')
+    }
+  }, [])
+
+  const handleQuitConfirm = (confirmed: boolean): void => {
+    setShowQuitConfirm(false)
+    window.electron.ipcRenderer.send('quit-confirm-result', confirmed)
+  }
+
+  const handleProfileInstallConfirm = (confirmed: boolean): void => {
+    setShowProfileInstallConfirm(false)
+    window.electron.ipcRenderer.send('profile-install-confirm-result', confirmed)
+  }
+
+  const handleOverrideInstallConfirm = (confirmed: boolean): void => {
+    setShowOverrideInstallConfirm(false)
+    window.electron.ipcRenderer.send('override-install-confirm-result', confirmed)
+  }
+
+  return (
+    <div className={`w-full h-screen flex ${resizing ? 'cursor-ew-resize' : ''}`}>
+      <Suspense fallback={null}>
+        {showQuitConfirm && (
+          <ConfirmModal
+            title="确定要退出 Clash Meta For Windows 吗？"
+            description={
+              <div>
+                <p></p>
+                <p className="text-sm text-gray-500 mt-2">退出后代理功能将停止工作</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  快按两次或长按 {platform === 'darwin' ? '⌘Q' : 'Ctrl+Q'} 可直接退出
+                </p>
+              </div>
+            }
+            confirmText="退出"
+            cancelText="取消"
+            onChange={(open) => {
+              if (!open) {
+                handleQuitConfirm(false)
+              }
+            }}
+            onConfirm={() => handleQuitConfirm(true)}
+          />
+        )}
+        {showProfileInstallConfirm && profileInstallData && (
+          <ConfirmModal
+            title="确定要导入订阅配置吗？"
+            description={
+              <div>
+                <p className="text-sm text-gray-600 mb-2">
+                  名称：{profileInstallData.name || '未命名'}
+                </p>
+                <p className="text-sm text-gray-600 mb-2">链接：{profileInstallData.url}</p>
+                <p className="text-sm text-orange-500 mt-2">
+                  请确保订阅配置来源可信，恶意配置可能影响您的网络安全
+                </p>
+              </div>
+            }
+            confirmText="导入"
+            cancelText="取消"
+            onChange={(open) => {
+              if (!open) {
+                handleProfileInstallConfirm(false)
+              }
+            }}
+            onConfirm={() => handleProfileInstallConfirm(true)}
+            className="w-125"
+          />
+        )}
+        {showOverrideInstallConfirm && overrideInstallData && (
+          <ConfirmModal
+            title="确定要导入覆写文件吗？"
+            description={
+              <div>
+                <p className="text-sm text-gray-600 mb-2">
+                  名称：{overrideInstallData.name || '未命名'}
+                </p>
+                <p className="text-sm text-gray-600 mb-2">链接：{overrideInstallData.url}</p>
+                <p className="text-sm text-orange-500 mt-2">
+                  请确保覆写文件来源可信，恶意覆写文件可能影响您的网络安全
+                </p>
+              </div>
+            }
+            confirmText="导入"
+            cancelText="取消"
+            onChange={(open) => {
+              if (!open) {
+                handleOverrideInstallConfirm(false)
+              }
+            }}
+            onConfirm={() => handleOverrideInstallConfirm(true)}
+          />
+        )}
+      </Suspense>
+      {siderWidthValue === narrowWidth ? (
+        <div style={{ width: `${narrowWidth}px` }} className="side h-full flex flex-col">
+          <div className="app-drag flex shrink-0 justify-center items-center z-40 bg-transparent h-11.25">
+            {platform !== 'darwin' && <MihomoIcon className="h-8 leading-8 text-lg mx-px" />}
+          </div>
+          <Suspense fallback={<div className="min-h-0 flex-1" />}>
+            <SiderCards iconOnly />
+          </Suspense>
+          <div className="px-2 pt-2 pb-4 flex shrink-0 flex-col items-center space-y-2">
+            {latest && latest.version && (
+              <Suspense fallback={null}>
+                <UpdaterButton
+                  iconOnly={true}
+                  latest={latest}
+                  showButtonAfterNotification={showUpdateButtonAfterNotification}
+                />
+              </Suspense>
+            )}
+            <OutboundModeSwitcher iconOnly />
+            <Button
+              size="sm"
+              className="app-nodrag"
+              isIconOnly
+              color={location.pathname.includes('/settings') ? 'primary' : 'default'}
+              variant={location.pathname.includes('/settings') ? 'solid' : 'light'}
+              onPress={() => navigate('/settings')}
+            >
+              <IoSettings className="text-[20px]" />
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div
+          style={{ width: `${siderWidthValue}px` }}
+          className="side h-full overflow-y-auto no-scrollbar"
+        >
+          <div
+            className={`app-drag sticky top-0 z-40 ${disableAnimation ? 'bg-background/95 backdrop-blur-sm' : 'bg-transparent backdrop-blur'} h-12.25`}
+          >
+            <div
+              className={`flex justify-between p-2 ${!useWindowFrame && platform === 'darwin' ? 'ml-16.5' : ''}`}
+            >
+              <div className="flex ml-1">
+                <h3 className="text-lg font-bold leading-8">Clash Meta For Windows</h3>
+              </div>
+              {latest && latest.version && (
+                <Suspense fallback={null}>
+                  <UpdaterButton
+                    latest={latest}
+                    showButtonAfterNotification={showUpdateButtonAfterNotification}
+                  />
+                </Suspense>
+              )}
+              <Button
+                size="sm"
+                className="app-nodrag"
+                isIconOnly
+                color={location.pathname.includes('/settings') ? 'primary' : 'default'}
+                variant={location.pathname.includes('/settings') ? 'solid' : 'light'}
+                onPress={() => {
+                  navigate('/settings')
+                }}
+              >
+                <IoSettings className="text-[20px]" />
+              </Button>
+            </div>
+          </div>
+          <div className="mt-2 mx-2">
+            <OutboundModeSwitcher />
+          </div>
+          <Suspense fallback={null}>
+            <SiderCards />
+          </Suspense>
+        </div>
+      )}
+
+      <div
+        onPointerDown={(event) => {
+          resizePointerIdRef.current = event.pointerId
+          event.currentTarget.setPointerCapture(event.pointerId)
+          updateSiderWidthFromClientX(event.clientX)
+          setResizing(true)
+        }}
+        style={{
+          position: 'fixed',
+          zIndex: 50,
+          left: `${siderWidthValue - 6}px`,
+          width: '12px',
+          height: '100vh',
+          cursor: 'ew-resize',
+          touchAction: 'none'
+        }}
+        className="group flex justify-center"
+      >
+        <div
+          className={`h-full w-0.5 transition-colors ${
+            resizing ? 'bg-primary' : 'bg-transparent group-hover:bg-primary/60'
+          }`}
+        />
+      </div>
+      <Divider orientation="vertical" />
+      <div
+        style={{ width: `calc(100% - ${siderWidthValue + 1}px)` }}
+        className="main grow h-full overflow-y-auto"
+      >
+        <Suspense fallback={null}>{page}</Suspense>
+      </div>
+    </div>
+  )
+}
+
+export default App

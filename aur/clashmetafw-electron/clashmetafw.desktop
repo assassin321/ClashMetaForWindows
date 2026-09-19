@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Clash Meta For Windows
+Exec=clashmetafw %U
+Terminal=false
+Type=Application
+Icon=clashmetafw
+StartupWMClass=clashmetafw
+MimeType=x-scheme-handler/clash;x-scheme-handler/mihomo;x-scheme-handler/clashmetafw;
+Comment=Clash Meta For Windows
+Categories=Utility;

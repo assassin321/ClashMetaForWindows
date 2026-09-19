@@ -1,0 +1,28 @@
+#!/bin/sh
+
+APP_PATH="/Applications/Clash.Meta.app"
+
+chown root:admin "$APP_PATH/Contents/Resources/sidecar/mihomo"
+chown root:admin "$APP_PATH/Contents/Resources/sidecar/mihomo-alpha"
+chmod +s "$APP_PATH/Contents/Resources/sidecar/mihomo"
+chmod +s "$APP_PATH/Contents/Resources/sidecar/mihomo-alpha"
+
+/usr/bin/codesign --force --deep --sign - "$APP_PATH"
+
+restore_clashmetafw_service_if_was_running() {
+  SERVICE_BIN="$APP_PATH/Contents/Resources/files/clashmetafw-service"
+  SERVICE_STATE_FILE="/tmp/clashmetafw-service-was-running"
+
+  if [ ! -f "$SERVICE_STATE_FILE" ]; then
+    return
+  fi
+  rm -f "$SERVICE_STATE_FILE" 2>/dev/null || true
+
+  if [ -x "$SERVICE_BIN" ]; then
+    "$SERVICE_BIN" service start >/dev/null 2>&1 || true
+  fi
+}
+
+restore_clashmetafw_service_if_was_running
+
+exit 0

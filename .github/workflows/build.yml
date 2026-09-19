@@ -1,0 +1,240 @@
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        description: 'Build channel'
+        required: true
+        type: string
+      version:
+        description: 'Stable version without the v prefix'
+        required: false
+        type: string
+      release_tag:
+        description: 'GitHub Release tag containing the artifacts'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            arch: x64
+            format: 7z
+          - os: windows-latest
+            arch: x64
+            format: nsis
+          - os: windows-latest
+            arch: arm64
+            format: 7z
+          - os: windows-latest
+            arch: arm64
+            format: nsis
+
+          - os: ubuntu-latest
+            arch: x64
+            format: deb
+          - os: ubuntu-latest
+            arch: x64
+            format: rpm
+          - os: ubuntu-latest
+            arch: x64
+            format: pacman
+          - os: ubuntu-latest
+            arch: arm64
+            format: deb
+          - os: ubuntu-latest
+            arch: arm64
+            format: rpm
+          - os: ubuntu-latest
+            arch: arm64
+            format: pacman
+          - os: ubuntu-latest
+            arch: loong64
+            format: deb
+          - os: ubuntu-latest
+            arch: loong64
+            format: rpm
+          - os: ubuntu-latest
+            arch: loong64
+            format: pacman
+
+          - os: macos-latest
+            arch: x64
+          - os: macos-latest
+            arch: arm64
+
+    name: Build ${{ matrix.os }}-${{ matrix.arch }}${{ matrix.format && '-' || '' }}${{ matrix.format || '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 25
+
+      - name: Setup pnpm
+        run: npm install -g pnpm
+
+      - name: Determine and Update Version
+        env:
+          BUILD_CHANNEL: ${{ inputs.channel }}
+          INPUT_VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          GIT_COMMIT_HASH=$(git rev-parse --short HEAD)
+          VERSION=$(jq -r '.version' package.json)
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid package version: $VERSION"
+            exit 1
+          fi
+
+          case "$BUILD_CHANNEL" in
+            stable)
+              if [[ ! "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "Invalid stable version: $INPUT_VERSION"
+                exit 1
+              fi
+              RELEASE_VERSION="$INPUT_VERSION"
+              ;;
+            rolling)
+              IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
+              RELEASE_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))-rolling-${GIT_COMMIT_HASH}"
+              ;;
+            *)
+              echo "Invalid build channel: $BUILD_CHANNEL"
+              exit 1
+              ;;
+          esac
+
+          if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rolling-[0-9a-f]+)?$ ]]; then
+            echo "Invalid release version: $RELEASE_VERSION"
+            exit 1
+          fi
+
+          jq --arg version "$RELEASE_VERSION" '.version = $version' package.json > tmp.json && mv tmp.json package.json
+
+      - name: Keep product name lowercase on Linux
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sed -i "s/productName: Clash Meta For Windows/productName: clashmetafw/" electron-builder.yml
+
+      - name: Install Build Tools
+        if: matrix.os == 'ubuntu-latest' && matrix.format == 'pacman'
+        run: |
+          sudo apt-get update && sudo apt-get install -y libarchive-tools
+
+      - name: Adaptation to the loongarch64 architecture
+        env:
+          npm_config_arch: ${{ matrix.arch }}
+          npm_config_target_arch: ${{ matrix.arch }}
+        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'loong64'
+        shell: bash
+        run: |
+          export ELECTRON_MIRROR="https://github.com/darkyzhou/electron-loong64/releases/download/"
+          export electron_use_remote_checksums=1
+          SKIP_PREPARE=1 pnpm install electron@42.3.0 -D
+          pnpm remove electron-builder
+          SKIP_PREPARE=1 pnpm install @loongdotjs/electron-builder@26.15.6 -D
+
+      - name: Install Dependencies and Prepare
+        env:
+          npm_config_arch: ${{ matrix.arch }}
+          npm_config_target_arch: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          case "${{ matrix.os }}-${{ matrix.arch }}" in
+            windows-latest-x64) PNPM_TARGET_FLAGS="--os=current --os=win32 --cpu=current --cpu=x64"; SPARKLE_NATIVE_PACKAGE="@uruhalushia/sparkle-native-win32-x64-msvc" ;;
+            windows-latest-arm64) PNPM_TARGET_FLAGS="--os=current --os=win32 --cpu=current --cpu=arm64"; SPARKLE_NATIVE_PACKAGE="@uruhalushia/sparkle-native-win32-arm64-msvc" ;;
+            ubuntu-latest-x64) PNPM_TARGET_FLAGS="--os=current --os=linux --cpu=current --cpu=x64 --libc=current --libc=glibc"; SPARKLE_NATIVE_PACKAGE="@uruhalushia/sparkle-native-linux-x64-gnu" ;;
+            ubuntu-latest-arm64) PNPM_TARGET_FLAGS="--os=current --os=linux --cpu=current --cpu=arm64 --libc=current --libc=glibc"; SPARKLE_NATIVE_PACKAGE="@uruhalushia/sparkle-native-linux-arm64-gnu" ;;
+            ubuntu-latest-loong64) PNPM_TARGET_FLAGS="--os=current --os=linux --cpu=current --cpu=loong64 --libc=current --libc=glibc"; SPARKLE_NATIVE_PACKAGE="@uruhalushia/sparkle-native-linux-loong64-gnu" ;;
+            macos-latest-x64) PNPM_TARGET_FLAGS="--os=current --os=darwin --cpu=current --cpu=x64"; SPARKLE_NATIVE_PACKAGE="@uruhalushia/sparkle-native-darwin-x64" ;;
+            macos-latest-arm64) PNPM_TARGET_FLAGS="--os=current --os=darwin --cpu=current --cpu=arm64"; SPARKLE_NATIVE_PACKAGE="@uruhalushia/sparkle-native-darwin-arm64" ;;
+            *) echo "Unsupported native target: ${{ matrix.os }}-${{ matrix.arch }}" && exit 1 ;;
+          esac
+          SKIP_PREPARE=1 pnpm install $PNPM_TARGET_FLAGS
+
+          verify_native_package() {
+            node -e "require('node:module').createRequire(require.resolve(process.argv[1])).resolve(process.argv[2].trim() + '/package.json')" "$1" "$2"
+          }
+          ensure_native_package() {
+            local root_package="$1"
+            local native_package="$2"
+            if ! verify_native_package "$root_package" "$native_package"; then
+              local package_version
+              package_version=$(node -p "require('./node_modules/${root_package}/package.json').version")
+              SKIP_PREPARE=1 pnpm add "$native_package@$package_version" -D --ignore-scripts $PNPM_TARGET_FLAGS
+            fi
+          }
+          prune_native_packages() {
+            node -e "const fs=require('node:fs');const path=require('node:path');const root=process.argv[1].trim();const prefix=process.argv[2].trim();const target=process.argv[3].trim();const keep=target.split('/').pop();const base=path.dirname(path.dirname(require.resolve(root + '/package.json')));for(const name of fs.readdirSync(base)){if(name.startsWith(prefix)&&name!==keep)fs.rmSync(path.join(base,name),{recursive:true,force:true});}const store=path.join(process.cwd(),'node_modules','.pnpm');const storePrefix=root.replace('/','+')+'-';for(const name of fs.readdirSync(store)){if(name.startsWith(storePrefix)&&!name.startsWith(root.replace('/','+')+'-'+keep.slice(prefix.length)+'@'))fs.rmSync(path.join(store,name),{recursive:true,force:true});}" "$1" "$2" "$3"
+          }
+
+          ensure_native_package "@uruhalushia/sparkle-native" "$SPARKLE_NATIVE_PACKAGE"
+          prune_native_packages "@uruhalushia/sparkle-native" "sparkle-native-" "$SPARKLE_NATIVE_PACKAGE"
+          verify_native_package "@uruhalushia/sparkle-native" "$SPARKLE_NATIVE_PACKAGE" \
+            || (echo "Missing $SPARKLE_NATIVE_PACKAGE. pnpm must install cross-platform optional native dependencies." && exit 1)
+          pnpm prepare --${{ matrix.arch }}
+
+      - name: Build
+        env:
+          npm_config_arch: ${{ matrix.arch }}
+          npm_config_target_arch: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            pnpm build:win ${{ matrix.format }} --${{ matrix.arch }}
+          elif [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+            if [[ "${{ matrix.arch }}" == "loong64" ]]; then
+              export ELECTRON_MIRROR="https://github.com/darkyzhou/electron-loong64/releases/download/"
+              export electron_use_remote_checksums=1
+              pnpm build:linux ${{ matrix.format }} --${{ matrix.arch }}
+            else
+              pnpm build:linux ${{ matrix.format }} --${{ matrix.arch }}
+            fi
+          else
+            pnpm build:mac --${{ matrix.arch }}
+          fi
+
+      - name: Add Portable Flag
+        if: matrix.os == 'windows-latest' && matrix.format == '7z'
+        shell: pwsh
+        run: |
+          New-Item -Path "PORTABLE" -ItemType File
+          Get-ChildItem dist/*portable.7z | ForEach-Object {
+            7z a $_.FullName PORTABLE
+          }
+
+      - name: Create Changelog
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git log -1 --pretty=format:"%s%n%b" > changelog.md
+
+      - name: Generate latest.yml
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: SKIP_CHANGELOG=1 pnpm updater
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.os }}-${{ matrix.arch }}${{ matrix.format && '-' || '' }}${{ matrix.format || '' }}
+          path: |
+            dist/clashmetafw*
+            !dist/clash.meta.app.plist
+            !dist/clashmetafw*blockmap*
+            latest.yml
+            changelog.md

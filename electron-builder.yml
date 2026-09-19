@@ -1,0 +1,121 @@
+appId: clash.meta.app
+productName: Clash Meta For Windows
+directories:
+  buildResources: build
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!aur/*'
+  - '!images/*'
+  - '!scripts/*'
+  - '!extra/*'
+  - '!tailwind.config.js'
+  - '!postcss.config.js'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+extraResources:
+  - from: './extra/'
+    to: ''
+protocols:
+  name: 'Clash Meta For Windows URI Scheme'
+  schemes:
+    - 'clash'
+    - 'mihomo'
+    - 'clashmetafw'
+win:
+  target:
+    - nsis
+    - 7z
+  artifactName: ${name}-windows-${version}-${arch}-portable.${ext}
+nsis:
+  artifactName: ${name}-windows-${version}-${arch}-setup.${ext}
+  uninstallDisplayName: ${productName}
+  allowToChangeInstallationDirectory: true
+  oneClick: false
+  perMachine: true
+  createDesktopShortcut: false
+  include: build/installer.nsh
+mac:
+  target:
+    - pkg
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    - NSCameraUsageDescription: Application requests access to the device's camera.
+    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
+    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
+    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+  notarize: false
+  artifactName: ${name}-macos-${version}-${arch}.${ext}
+pkg:
+  allowAnywhere: false
+  allowCurrentUserHome: false
+  # background:
+  #   alignment: bottomleft
+  #   file: build/background.png
+linux:
+  desktop:
+    entry:
+      Name: Clash Meta For Windows
+      MimeType: 'x-scheme-handler/clash;x-scheme-handler/mihomo;x-scheme-handler/clashmetafw'
+  target:
+    - deb
+    - rpm
+    - pacman
+  maintainer: assassin321 <zhiqu@cock.li>
+  category: Utility
+  artifactName: ${name}-linux-${version}-${arch}.${ext}
+deb:
+  fpm:
+    - --before-install=build/linux/preinst
+  afterInstall: 'build/linux/postinst'
+  depends:
+    - libasound2
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+  recommends:
+    - libappindicator3-1
+rpm:
+  fpm:
+    - --before-install=build/linux/preinst
+  afterInstall: 'build/linux/postinst'
+  depends:
+    - alsa-lib
+    - gtk3
+    - libnotify
+    - nss
+    - libXScrnSaver
+    - libXtst
+    - xdg-utils
+    - at-spi2-core
+    - libuuid
+    - libsecret
+pacman:
+  afterInstall: 'build/linux/postinst'
+  fpm:
+    - --before-install=build/linux/preinst
+    - --pacman-compression
+    - zstd
+    - build/linux/clashmetafw.sh=/usr/bin/clashmetafw
+  depends:
+    - alsa-lib
+    - gtk3
+    - libnotify
+    - nss
+    - libxss
+    - libxtst
+    - xdg-utils
+    - at-spi2-core
+    - util-linux-libs
+    - libsecret
+  artifactName: ${name}-linux-${version}-${arch}.pkg.tar.zst
+npmRebuild: true
+publish: []

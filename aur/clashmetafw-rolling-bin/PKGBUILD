@@ -1,0 +1,36 @@
+pkgname=clashmetafw-rolling-bin
+_pkgname=clashmetafw
+pkgver=2.0.3
+_releasever=2.0.3
+pkgrel=1
+pkgdesc="Another Mihomo GUI (rolling binary release)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/assassin321/ClashMetaForWindows"
+license=('GPL-3.0-only')
+depends=('alsa-lib' 'at-spi2-core' 'cairo' 'dbus' 'expat' 'gcc-libs' 'glib2'
+         'glibc' 'gtk3' 'libcups' 'libx11' 'libxcb' 'libxcomposite' 'libxdamage'
+         'libxext' 'libxfixes' 'libxkbcommon' 'libxrandr' 'mesa' 'nspr' 'nss'
+         'pango' 'systemd-libs')
+makedepends=('libarchive')
+options=('!debug')
+provides=("clashmetafw=${pkgver}")
+conflicts=('clashmetafw' 'clashmetafw-bin' 'clashmetafw-git' 'clashmetafw-electron'
+           'clashmetafw-electron-bin' 'clashmetafw-electron-git')
+install=${_pkgname}.install
+source=("${_pkgname}.sh")
+source_x86_64=("${_pkgname}-${_releasever}-x86_64.deb::${url}/releases/download/rolling/${_pkgname}-linux-${_releasever}-amd64.deb")
+source_aarch64=("${_pkgname}-${_releasever}-aarch64.deb::${url}/releases/download/rolling/${_pkgname}-linux-${_releasever}-arm64.deb")
+sha256sums=('68c3b948301007f29e4f0db9b1b413766c2bcacf7eaf5305c7e7b83f547df3b5')
+sha256sums_x86_64=('a3f55648bb6c6c1b1deabf6bbe354c3d8960ef0c672e9b47bb623bcbecfd5829')
+sha256sums_aarch64=('2a7dada64a8ef3e76b11cfaa3b9a3acb98cc9e8d4da506100e7eb750dd12049d')
+
+package() {
+    bsdtar -xf data.tar.xz -C "$pkgdir"
+    chmod +x "$pkgdir/opt/clashmetafw/clashmetafw"
+    chmod +x "$pkgdir/opt/clashmetafw/resources/files/clashmetafw-service"
+    chmod +sx "$pkgdir/opt/clashmetafw/resources/sidecar/mihomo"
+    chmod +sx "$pkgdir/opt/clashmetafw/resources/sidecar/mihomo-alpha"
+    install -Dm755 "$srcdir/${_pkgname}.sh" "$pkgdir/usr/bin/${_pkgname}"
+    sed -i 's|^Exec=/opt/clashmetafw/clashmetafw|Exec=clashmetafw|' \
+        "$pkgdir/usr/share/applications/${_pkgname}.desktop"
+}

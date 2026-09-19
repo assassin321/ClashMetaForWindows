@@ -1,0 +1,51 @@
+#!/bin/bash
+
+if [ ! -f '/usr/bin/clashmetafw' ] || [ -L '/usr/bin/clashmetafw' ]; then
+    if type update-alternatives 2>/dev/null >&1; then
+        # Remove previous link if it doesn't use update-alternatives
+        if [ -L '/usr/bin/clashmetafw' -a -e '/usr/bin/clashmetafw' -a "`readlink '/usr/bin/clashmetafw'`" != '/etc/alternatives/clashmetafw' ]; then
+            rm -f '/usr/bin/clashmetafw'
+        fi
+        update-alternatives --install '/usr/bin/clashmetafw' 'clashmetafw' '/opt/clashmetafw/clashmetafw' 100 || ln -sf '/opt/clashmetafw/clashmetafw' '/usr/bin/clashmetafw'
+    else
+        ln -sf '/opt/clashmetafw/clashmetafw' '/usr/bin/clashmetafw'
+    fi
+fi
+
+sed -i 's/Name=clashmetafw/Name=Clash Meta For Windows/' '/usr/share/applications/clashmetafw.desktop'
+
+chmod 4755 '/opt/clashmetafw/chrome-sandbox' || true
+chmod +sx /opt/clashmetafw/resources/sidecar/mihomo
+chmod +sx /opt/clashmetafw/resources/sidecar/mihomo-alpha
+
+if [ -d '/opt/clashmetafw/resources/files/sub-store-frontend' ]; then
+    chmod -R go-w '/opt/clashmetafw/resources/files/sub-store-frontend' 2>/dev/null || true
+fi
+
+restore_clashmetafw_service_if_was_running() {
+    SERVICE_NAME='ClashMetaFWService'
+    STATE_FILE='/run/clashmetafw/service-was-running'
+
+    if [ ! -f "$STATE_FILE" ]; then
+        return
+    fi
+    rm -f "$STATE_FILE" 2>/dev/null || true
+
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl start "$SERVICE_NAME" >/dev/null 2>&1 || true
+    elif command -v service >/dev/null 2>&1; then
+        service "$SERVICE_NAME" start >/dev/null 2>&1 || true
+    elif [ -x "/etc/init.d/$SERVICE_NAME" ]; then
+        "/etc/init.d/$SERVICE_NAME" start >/dev/null 2>&1 || true
+    fi
+}
+
+restore_clashmetafw_service_if_was_running
+
+if hash update-mime-database 2>/dev/null; then
+    update-mime-database /usr/share/mime || true
+fi
+
+if hash update-desktop-database 2>/dev/null; then
+    update-desktop-database /usr/share/applications || true
+fi

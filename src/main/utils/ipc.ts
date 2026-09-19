@@ -1,0 +1,421 @@
+import { app, ipcMain } from 'electron'
+import {
+  mihomoChangeProxy,
+  mihomoCloseConnections,
+  mihomoCloseConnection,
+  mihomoGroupDelay,
+  mihomoGroups,
+  mihomoProxies,
+  mihomoProxyDelay,
+  mihomoProxyProviders,
+  mihomoRuleProviders,
+  mihomoRules,
+  mihomoUnfixedProxy,
+  mihomoUpdateProxyProviders,
+  mihomoUpdateRuleProviders,
+  mihomoUpgrade,
+  mihomoUpgradeUI,
+  mihomoUpgradeGeo,
+  mihomoVersion,
+  mihomoConfig,
+  patchMihomoConfig,
+  restartMihomoLogs,
+  restartMihomoConnections,
+  mihomoRulesDisable
+} from '../core/mihomoApi'
+import { checkAutoRun, disableAutoRun, enableAutoRun } from '../sys/autoRun'
+import {
+  getAppConfig,
+  patchAppConfig,
+  getControledMihomoConfig,
+  patchControledMihomoConfig,
+  getProfileConfig,
+  getCurrentProfileItem,
+  getProfileItem,
+  addProfileItem,
+  removeProfileItem,
+  changeCurrentProfile,
+  getProfileStr,
+  getFileStr,
+  getFilePreviewStr,
+  setFileStr,
+  saveFileStrWithElevation,
+  setProfileStr,
+  updateProfileItem,
+  setProfileConfig,
+  getOverrideConfig,
+  setOverrideConfig,
+  getOverrideItem,
+  addOverrideItem,
+  removeOverrideItem,
+  getOverride,
+  setOverride,
+  updateOverrideItem
+} from '../config'
+import {
+  startSubStoreFrontendServer,
+  startSubStoreBackendServer,
+  stopSubStoreFrontendServer,
+  stopSubStoreBackendServer,
+  downloadSubStore,
+  subStoreFrontendPort,
+  subStorePort
+} from '../resolve/server'
+import { quitWithoutCore, restartCore, startNetworkDetection, stopCore } from '../core/manager'
+import { stopNetworkDetection } from '../core/network'
+import {
+  checkCorePermission,
+  manualGrantCorePermition,
+  revokeCorePermission
+} from '../core/permission'
+import { triggerSysProxy } from '../sys/sysproxy'
+import { checkUpdate, downloadAndInstallUpdate, cancelUpdate } from '../resolve/autoUpdater'
+import {
+  checkElevateTask,
+  deleteElevateTask,
+  getFilePath,
+  openFile,
+  openUWPTool,
+  readImageFileDataURL,
+  readTextFile,
+  resetAppConfig,
+  setNativeTheme,
+  setupFirewall
+} from '../sys/misc'
+import {
+  serviceStatus,
+  installService,
+  uninstallService,
+  startService,
+  stopService,
+  initService,
+  testServiceConnection,
+  restartService
+} from '../service/manager'
+import { patchCoreProfile } from '../service/api'
+import { coreLogPath, findSystemMihomo, logDir } from './dirs'
+import {
+  getRuntimeConfig,
+  getRuntimeConfigStr,
+  getRawProfileStr,
+  getCurrentProfileStr,
+  getOverrideProfileStr
+} from '../core/factory'
+import { listWebdavBackups, webdavBackup, webdavDelete, webdavRestore } from '../resolve/backup'
+import { getInterfaces } from '../sys/interface'
+import {
+  closeTrayIcon,
+  copyEnv,
+  setDockVisible,
+  showTrayIcon,
+  updateTrayIcon
+} from '../resolve/tray'
+import { registerShortcut } from '../resolve/shortcut'
+import {
+  closeMainWindow,
+  mainWindow,
+  setNotQuitDialog,
+  showMainWindow,
+  triggerMainWindow
+} from '..'
+import {
+  applyTheme,
+  fetchThemes,
+  importThemes,
+  readTheme,
+  resolveThemes,
+  writeTheme
+} from '../resolve/theme'
+import { subStoreCollections, subStoreSubs } from '../core/subStoreApi'
+import path from 'path'
+import v8 from 'v8'
+import { getGistUrl } from '../resolve/gistApi'
+import { getIconDataURL, getImageDataURL } from './icon'
+import { startMonitor } from '../resolve/trafficMonitor'
+import { closeFloatingWindow, showContextMenu, showFloatingWindow } from '../resolve/floatingWindow'
+import { getAppName } from '@uruhalushia/sparkle-native'
+import { showNotification } from './notification'
+import { getUserAgent } from './userAgent'
+import { appendAppLog, clearCachedMihomoLogs, getCachedMihomoLogs } from './log'
+import { ageIdentityToRecipient, generateAgeKeyPair } from './age'
+
+function ipcErrorWrapper<T>( // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  fn: (...args: any[]) => T | Promise<T> // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): (...args: any[]) => Promise<T | { invokeError: unknown }> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return async (...args: any[]) => {
+    try {
+      return await fn(...args)
+    } catch (e) {
+      if (e && typeof e === 'object') {
+        if ('message' in e) {
+          return { invokeError: e.message }
+        } else {
+          return { invokeError: JSON.stringify(e) }
+        }
+      }
+      if (e instanceof Error || typeof e === 'string') {
+        return { invokeError: e }
+      }
+      return { invokeError: 'Unknown Error' }
+    }
+  }
+}
+
+async function patchAppConfigWithServiceSync(patch: Partial<AppConfig>): Promise<AppConfig> {
+  const nextConfig = await patchAppConfig(await normalizeServiceModePatch(patch))
+
+  if (!('saveLogs' in patch || 'maxLogFileSizeMB' in patch)) {
+    return nextConfig
+  }
+
+  const {
+    corePermissionMode = 'elevated',
+    saveLogs = true,
+    maxLogFileSizeMB = 20
+  } = await getAppConfig()
+  if (corePermissionMode !== 'service') {
+    return nextConfig
+  }
+
+  void patchCoreProfile({
+    log_path: coreLogPath(),
+    save_logs: saveLogs,
+    max_log_file_size_mb: maxLogFileSizeMB
+  }).catch((error) => {
+    appendAppLog(`[Service]: sync core log config failed, ${error}\n`).catch(() => {})
+  })
+
+  return nextConfig
+}
+
+async function normalizeServiceModePatch(patch: Partial<AppConfig>): Promise<Partial<AppConfig>> {
+  if (patch.sysProxy?.settingMode !== 'service') {
+    return patch
+  }
+
+  const status = await serviceStatus().catch(() => 'unknown' as const)
+  if (status === 'running') {
+    return patch
+  }
+
+  void showNotification({ title: '服务不可用，已切换到执行命令模式' })
+  return {
+    ...patch,
+    sysProxy: {
+      ...patch.sysProxy,
+      settingMode: 'exec',
+      guard: false,
+      guardNotify: false
+    }
+  }
+}
+
+export function registerIpcMainHandlers(): void {
+  ipcMain.handle('mihomoVersion', ipcErrorWrapper(mihomoVersion))
+  ipcMain.handle('mihomoConfig', ipcErrorWrapper(mihomoConfig))
+  ipcMain.handle('mihomoCloseConnection', (_e, id) => ipcErrorWrapper(mihomoCloseConnection)(id))
+  ipcMain.handle('mihomoCloseConnections', (_e, name) =>
+    ipcErrorWrapper(mihomoCloseConnections)(name)
+  )
+  ipcMain.handle('mihomoRules', ipcErrorWrapper(mihomoRules))
+  ipcMain.handle('mihomoProxies', ipcErrorWrapper(mihomoProxies))
+  ipcMain.handle('mihomoGroups', ipcErrorWrapper(mihomoGroups))
+  ipcMain.handle('mihomoProxyProviders', ipcErrorWrapper(mihomoProxyProviders))
+  ipcMain.handle('mihomoUpdateProxyProviders', (_e, name) =>
+    ipcErrorWrapper(mihomoUpdateProxyProviders)(name)
+  )
+  ipcMain.handle('mihomoRuleProviders', ipcErrorWrapper(mihomoRuleProviders))
+  ipcMain.handle('mihomoUpdateRuleProviders', (_e, name) =>
+    ipcErrorWrapper(mihomoUpdateRuleProviders)(name)
+  )
+  ipcMain.handle('mihomoChangeProxy', (_e, group, proxy) =>
+    ipcErrorWrapper(mihomoChangeProxy)(group, proxy)
+  )
+  ipcMain.handle('mihomoUnfixedProxy', (_e, group) => ipcErrorWrapper(mihomoUnfixedProxy)(group))
+  ipcMain.handle('mihomoUpgradeGeo', ipcErrorWrapper(mihomoUpgradeGeo))
+  ipcMain.handle('mihomoUpgradeUI', ipcErrorWrapper(mihomoUpgradeUI))
+  ipcMain.handle('mihomoUpgrade', (_e, channel) => ipcErrorWrapper(mihomoUpgrade)(channel))
+  ipcMain.handle('mihomoProxyDelay', (_e, proxy, url, provider) =>
+    ipcErrorWrapper(mihomoProxyDelay)(proxy, url, provider)
+  )
+  ipcMain.handle('mihomoGroupDelay', (_e, group, url) =>
+    ipcErrorWrapper(mihomoGroupDelay)(group, url)
+  )
+  ipcMain.handle('mihomoRulesDisable', (_e, rules) => ipcErrorWrapper(mihomoRulesDisable)(rules))
+  ipcMain.handle('patchMihomoConfig', (_e, patch) => ipcErrorWrapper(patchMihomoConfig)(patch))
+  ipcMain.handle('restartMihomoLogs', ipcErrorWrapper(restartMihomoLogs))
+  ipcMain.handle('checkAutoRun', ipcErrorWrapper(checkAutoRun))
+  ipcMain.handle('enableAutoRun', ipcErrorWrapper(enableAutoRun))
+  ipcMain.handle('disableAutoRun', ipcErrorWrapper(disableAutoRun))
+  ipcMain.handle('getAppConfig', (_e, force) => ipcErrorWrapper(getAppConfig)(force))
+  ipcMain.handle('getCachedMihomoLogs', () => getCachedMihomoLogs())
+  ipcMain.handle('clearCachedMihomoLogs', () => clearCachedMihomoLogs())
+  ipcMain.handle('patchAppConfig', (_e, config) =>
+    ipcErrorWrapper(patchAppConfigWithServiceSync)(config)
+  )
+  ipcMain.handle('getControledMihomoConfig', (_e, force) =>
+    ipcErrorWrapper(getControledMihomoConfig)(force)
+  )
+  ipcMain.handle('patchControledMihomoConfig', (_e, config) =>
+    ipcErrorWrapper(patchControledMihomoConfig)(config)
+  )
+  ipcMain.handle('getProfileConfig', (_e, force) => ipcErrorWrapper(getProfileConfig)(force))
+  ipcMain.handle('setProfileConfig', (_e, config) => ipcErrorWrapper(setProfileConfig)(config))
+  ipcMain.handle('getCurrentProfileItem', ipcErrorWrapper(getCurrentProfileItem))
+  ipcMain.handle('getProfileItem', (_e, id) => ipcErrorWrapper(getProfileItem)(id))
+  ipcMain.handle('getProfileStr', (_e, id) => ipcErrorWrapper(getProfileStr)(id))
+  ipcMain.handle('getFileStr', (_e, path, ageSecretKey) =>
+    ipcErrorWrapper(getFileStr)(path, ageSecretKey)
+  )
+  ipcMain.handle('getFilePreviewStr', (_e, path, format) =>
+    ipcErrorWrapper(getFilePreviewStr)(path, format)
+  )
+  ipcMain.handle('setFileStr', (_e, path, str) => ipcErrorWrapper(setFileStr)(path, str))
+  ipcMain.handle('saveFileStrWithElevation', (_e, path, str) =>
+    ipcErrorWrapper(saveFileStrWithElevation)(path, str)
+  )
+  ipcMain.handle('setProfileStr', (_e, id, str) => ipcErrorWrapper(setProfileStr)(id, str))
+  ipcMain.handle('updateProfileItem', (_e, item) => ipcErrorWrapper(updateProfileItem)(item))
+  ipcMain.handle('changeCurrentProfile', (_e, id) => ipcErrorWrapper(changeCurrentProfile)(id))
+  ipcMain.handle('addProfileItem', (_e, item) => ipcErrorWrapper(addProfileItem)(item))
+  ipcMain.handle('removeProfileItem', (_e, id) => ipcErrorWrapper(removeProfileItem)(id))
+  ipcMain.handle('getOverrideConfig', (_e, force) => ipcErrorWrapper(getOverrideConfig)(force))
+  ipcMain.handle('setOverrideConfig', (_e, config) => ipcErrorWrapper(setOverrideConfig)(config))
+  ipcMain.handle('getOverrideItem', (_e, id) => ipcErrorWrapper(getOverrideItem)(id))
+  ipcMain.handle('addOverrideItem', (_e, item) => ipcErrorWrapper(addOverrideItem)(item))
+  ipcMain.handle('removeOverrideItem', (_e, id) => ipcErrorWrapper(removeOverrideItem)(id))
+  ipcMain.handle('updateOverrideItem', (_e, item) => ipcErrorWrapper(updateOverrideItem)(item))
+  ipcMain.handle('getOverride', (_e, id, ext) => ipcErrorWrapper(getOverride)(id, ext))
+  ipcMain.handle('setOverride', (_e, id, ext, str) => ipcErrorWrapper(setOverride)(id, ext, str))
+  ipcMain.handle('restartCore', ipcErrorWrapper(restartCore))
+  ipcMain.handle('stopCore', ipcErrorWrapper(stopCore))
+  ipcMain.handle('restartMihomoConnections', ipcErrorWrapper(restartMihomoConnections))
+  ipcMain.handle('startMonitor', (_e, detached) => ipcErrorWrapper(startMonitor)(detached))
+  ipcMain.handle('triggerSysProxy', (_e, enable, onlyActiveDevice, useRegistry) =>
+    ipcErrorWrapper(triggerSysProxy)(enable, onlyActiveDevice, useRegistry)
+  )
+  ipcMain.handle('manualGrantCorePermition', (_e, cores?: ('mihomo' | 'mihomo-alpha')[]) =>
+    ipcErrorWrapper(manualGrantCorePermition)(cores)
+  )
+  ipcMain.handle('checkCorePermission', () => ipcErrorWrapper(checkCorePermission)())
+  ipcMain.handle('revokeCorePermission', (_e, cores?: ('mihomo' | 'mihomo-alpha')[]) =>
+    ipcErrorWrapper(revokeCorePermission)(cores)
+  )
+  ipcMain.handle('checkElevateTask', () => ipcErrorWrapper(checkElevateTask)())
+  ipcMain.handle('deleteElevateTask', () => ipcErrorWrapper(deleteElevateTask)())
+  ipcMain.handle('serviceStatus', () => ipcErrorWrapper(serviceStatus)())
+  ipcMain.handle('testServiceConnection', () => ipcErrorWrapper(testServiceConnection)())
+  ipcMain.handle('initService', () => ipcErrorWrapper(initService)())
+  ipcMain.handle('installService', () => ipcErrorWrapper(installService)())
+  ipcMain.handle('uninstallService', () => ipcErrorWrapper(uninstallService)())
+  ipcMain.handle('startService', () => ipcErrorWrapper(startService)())
+  ipcMain.handle('restartService', () => ipcErrorWrapper(restartService)())
+  ipcMain.handle('stopService', () => ipcErrorWrapper(stopService)())
+  ipcMain.handle('findSystemMihomo', () => findSystemMihomo())
+  ipcMain.handle('getFilePath', (_e, ext, title, filterName) => getFilePath(ext, title, filterName))
+  ipcMain.handle('readTextFile', (_e, filePath) => ipcErrorWrapper(readTextFile)(filePath))
+  ipcMain.handle('readImageFileDataURL', (_e, filePath) =>
+    ipcErrorWrapper(readImageFileDataURL)(filePath)
+  )
+  ipcMain.handle('getRuntimeConfigStr', ipcErrorWrapper(getRuntimeConfigStr))
+  ipcMain.handle('getRawProfileStr', ipcErrorWrapper(getRawProfileStr))
+  ipcMain.handle('getCurrentProfileStr', ipcErrorWrapper(getCurrentProfileStr))
+  ipcMain.handle('getOverrideProfileStr', ipcErrorWrapper(getOverrideProfileStr))
+  ipcMain.handle('getRuntimeConfig', ipcErrorWrapper(getRuntimeConfig))
+  ipcMain.handle('downloadAndInstallUpdate', (_e, version, tag) =>
+    ipcErrorWrapper(downloadAndInstallUpdate)(version, tag)
+  )
+  ipcMain.handle('checkUpdate', ipcErrorWrapper(checkUpdate))
+  ipcMain.handle('cancelUpdate', ipcErrorWrapper(cancelUpdate))
+  ipcMain.handle('getVersion', () => app.getVersion())
+  ipcMain.handle('platform', () => process.platform)
+  ipcMain.handle('openUWPTool', ipcErrorWrapper(openUWPTool))
+  ipcMain.handle('setupFirewall', ipcErrorWrapper(setupFirewall))
+  ipcMain.handle('getInterfaces', getInterfaces)
+  ipcMain.handle('webdavBackup', ipcErrorWrapper(webdavBackup))
+  ipcMain.handle('webdavRestore', (_e, filename) => ipcErrorWrapper(webdavRestore)(filename))
+  ipcMain.handle('listWebdavBackups', ipcErrorWrapper(listWebdavBackups))
+  ipcMain.handle('webdavDelete', (_e, filename) => ipcErrorWrapper(webdavDelete)(filename))
+  ipcMain.handle('registerShortcut', (_e, oldShortcut, newShortcut, action) =>
+    ipcErrorWrapper(registerShortcut)(oldShortcut, newShortcut, action)
+  )
+  ipcMain.handle('startSubStoreFrontendServer', () =>
+    ipcErrorWrapper(startSubStoreFrontendServer)()
+  )
+  ipcMain.handle('stopSubStoreFrontendServer', () => ipcErrorWrapper(stopSubStoreFrontendServer)())
+  ipcMain.handle('startSubStoreBackendServer', () => ipcErrorWrapper(startSubStoreBackendServer)())
+  ipcMain.handle('stopSubStoreBackendServer', () => ipcErrorWrapper(stopSubStoreBackendServer)())
+  ipcMain.handle('downloadSubStore', () => ipcErrorWrapper(downloadSubStore)())
+
+  ipcMain.handle('subStorePort', () => subStorePort)
+  ipcMain.handle('subStoreFrontendPort', () => subStoreFrontendPort)
+  ipcMain.handle('subStoreSubs', () => ipcErrorWrapper(subStoreSubs)())
+  ipcMain.handle('subStoreCollections', () => ipcErrorWrapper(subStoreCollections)())
+  ipcMain.handle('getGistUrl', ipcErrorWrapper(getGistUrl))
+  ipcMain.handle('setNativeTheme', (_e, theme) => {
+    setNativeTheme(theme)
+  })
+  ipcMain.handle('setTitleBarOverlay', (_e, overlay) =>
+    ipcErrorWrapper(async (overlay): Promise<void> => {
+      if (typeof mainWindow?.setTitleBarOverlay === 'function') {
+        mainWindow.setTitleBarOverlay(overlay)
+      }
+    })(overlay)
+  )
+  ipcMain.handle('setAlwaysOnTop', (_e, alwaysOnTop) => {
+    mainWindow?.setAlwaysOnTop(alwaysOnTop)
+  })
+  ipcMain.handle('isAlwaysOnTop', () => {
+    return mainWindow?.isAlwaysOnTop()
+  })
+  ipcMain.handle('showTrayIcon', () => ipcErrorWrapper(showTrayIcon)())
+  ipcMain.handle('closeTrayIcon', () => ipcErrorWrapper(closeTrayIcon)())
+  ipcMain.handle('updateTrayIcon', () => ipcErrorWrapper(updateTrayIcon)())
+  ipcMain.handle('setDockVisible', (_e, visible: boolean) => setDockVisible(visible))
+  ipcMain.handle('showMainWindow', showMainWindow)
+  ipcMain.handle('closeMainWindow', closeMainWindow)
+  ipcMain.handle('triggerMainWindow', triggerMainWindow)
+  ipcMain.handle('showFloatingWindow', () => ipcErrorWrapper(showFloatingWindow)())
+  ipcMain.handle('closeFloatingWindow', () => ipcErrorWrapper(closeFloatingWindow)())
+  ipcMain.handle('showContextMenu', () => ipcErrorWrapper(showContextMenu)())
+  ipcMain.handle('openFile', (_e, type, id, ext) => openFile(type, id, ext))
+  ipcMain.handle('openDevTools', () => {
+    mainWindow?.webContents.openDevTools()
+  })
+  ipcMain.handle('createHeapSnapshot', () => {
+    return v8.writeHeapSnapshot(path.join(logDir(), `${Date.now()}.heapsnapshot`))
+  })
+  ipcMain.handle('getUserAgent', () => ipcErrorWrapper(getUserAgent)())
+  ipcMain.handle('generateAgeKeyPair', () => ipcErrorWrapper(generateAgeKeyPair)())
+  ipcMain.handle('ageIdentityToRecipient', (_e, identity) =>
+    ipcErrorWrapper(ageIdentityToRecipient)(identity)
+  )
+  ipcMain.handle('getAppName', (_e, appPath) => ipcErrorWrapper(getAppName)(appPath))
+  ipcMain.handle('getImageDataURL', (_e, url) => ipcErrorWrapper(getImageDataURL)(url))
+  ipcMain.handle('getIconDataURL', (_e, appPath) => ipcErrorWrapper(getIconDataURL)(appPath))
+  ipcMain.handle('resolveThemes', () => ipcErrorWrapper(resolveThemes)())
+  ipcMain.handle('fetchThemes', () => ipcErrorWrapper(fetchThemes)())
+  ipcMain.handle('importThemes', (_e, file) => ipcErrorWrapper(importThemes)(file))
+  ipcMain.handle('readTheme', (_e, theme) => ipcErrorWrapper(readTheme)(theme))
+  ipcMain.handle('writeTheme', (_e, theme, css) => ipcErrorWrapper(writeTheme)(theme, css))
+  ipcMain.handle('applyTheme', (_e, theme) => ipcErrorWrapper(applyTheme)(theme))
+  ipcMain.handle('copyEnv', (_e, type) => ipcErrorWrapper(copyEnv)(type))
+  ipcMain.handle('alert', (_e, msg) => {
+    void showNotification({ title: 'Clash Meta For Windows', body: msg, variant: 'danger' })
+  })
+  ipcMain.handle('resetAppConfig', resetAppConfig)
+  ipcMain.handle('relaunchApp', () => {
+    setNotQuitDialog()
+    app.relaunch()
+    app.quit()
+  })
+  ipcMain.handle('quitWithoutCore', ipcErrorWrapper(quitWithoutCore))
+  ipcMain.handle('startNetworkDetection', ipcErrorWrapper(startNetworkDetection))
+  ipcMain.handle('stopNetworkDetection', ipcErrorWrapper(stopNetworkDetection))
+  ipcMain.handle('quitApp', () => app.quit())
+  ipcMain.handle('notDialogQuit', () => {
+    setNotQuitDialog()
+    app.quit()
+  })
+}

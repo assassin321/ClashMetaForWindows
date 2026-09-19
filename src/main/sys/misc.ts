@@ -1,0 +1,190 @@
+import { execFile, execSync, spawn } from 'child_process'
+import { app, dialog, nativeImage, nativeTheme, shell } from 'electron'
+import { readFile } from 'fs/promises'
+import path from 'path'
+import { promisify } from 'util'
+import { setupFirewallRules } from '@uruhalushia/sparkle-native'
+import {
+  dataDir,
+  exePath,
+  mihomoCorePath,
+  overridePath,
+  profilePath,
+  resourcesDir,
+  resourcesFilesDir,
+  taskDir
+} from '../utils/dirs'
+import { copyFileSync, writeFileSync } from 'fs'
+import { execWithElevation } from '../utils/elevation'
+
+export function getFilePath(
+  ext: string[],
+  title = '选择订阅文件',
+  filterName = `${ext} file`
+): string[] | undefined {
+  return dialog.showOpenDialogSync({
+    title,
+    filters: [{ name: filterName, extensions: ext }],
+    properties: ['openFile']
+  })
+}
+
+export async function readTextFile(filePath: string): Promise<string> {
+  return await readFile(filePath, 'utf8')
+}
+
+export async function readImageFileDataURL(filePath: string): Promise<string> {
+  const ext = path.extname(filePath).toLowerCase()
+  if (ext === '.ico' || ext === '.icns') {
+    const image = nativeImage.createFromPath(filePath)
+    if (image.isEmpty()) throw new Error('Failed to load image')
+    return image.toDataURL()
+  }
+  const mimeType =
+    ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.webp' ? 'image/webp' : 'image/png'
+  const data = await readFile(filePath)
+
+  return `data:${mimeType};base64,${data.toString('base64')}`
+}
+
+export function openFile(type: 'profile' | 'override', id: string, ext?: 'yaml' | 'js'): void {
+  if (type === 'profile') {
+    shell.openPath(profilePath(id))
+  }
+  if (type === 'override') {
+    shell.openPath(overridePath(id, ext || 'js'))
+  }
+}
+
+export async function openUWPTool(): Promise<void> {
+  const execFilePromise = promisify(execFile)
+  const uwpToolPath = path.join(resourcesDir(), 'files', 'enableLoopback.exe')
+  await execFilePromise(uwpToolPath)
+}
+
+export async function setupFirewall(): Promise<void> {
+  if (process.platform === 'win32') {
+    setupFirewallRules([
+      { name: 'mihomo', applicationPath: mihomoCorePath('mihomo') },
+      { name: 'mihomo-alpha', applicationPath: mihomoCorePath('mihomo-alpha') },
+      { name: 'Clash Meta For Windows', applicationPath: exePath() }
+    ])
+  }
+}
+
+export function setNativeTheme(theme: 'system' | 'light' | 'dark'): void {
+  nativeTheme.themeSource = theme
+}
+
+const elevateTaskXml = `<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers />
+  <Principals>
+    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>Parallel</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>false</AllowHardTerminate>
+    <StartWhenAvailable>false</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>3</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>"${path.join(taskDir(), `clashmetafw-run.exe`)}"</Command>
+      <Arguments>"${exePath()}"</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+`
+
+function prepareElevateTaskFile(): string {
+  const taskFilePath = path.join(taskDir(), `clashmetafw-run.xml`)
+  writeFileSync(taskFilePath, Buffer.from(`\ufeff${elevateTaskXml}`, 'utf-16le'))
+  copyFileSync(
+    path.join(resourcesFilesDir(), 'clashmetafw-run.exe'),
+    path.join(taskDir(), 'clashmetafw-run.exe')
+  )
+  return taskFilePath
+}
+
+export function createElevateTaskSync(): void {
+  const taskFilePath = prepareElevateTaskFile()
+  execSync(
+    `%SystemRoot%\\System32\\schtasks.exe /create /tn "clashmetafw-run" /xml "${taskFilePath}" /f`
+  )
+}
+
+export async function createElevateTask(): Promise<void> {
+  const taskFilePath = prepareElevateTaskFile()
+  await execWithElevation('schtasks.exe', [
+    '/create',
+    '/tn',
+    'clashmetafw-run',
+    '/xml',
+    taskFilePath,
+    '/f'
+  ])
+}
+
+export async function deleteElevateTask(): Promise<void> {
+  try {
+    execSync(`%SystemRoot%\\System32\\schtasks.exe /delete /tn "clashmetafw-run" /f`)
+  } catch {
+    // ignore
+  }
+}
+
+export async function checkElevateTask(): Promise<boolean> {
+  try {
+    execSync(`%SystemRoot%\\System32\\schtasks.exe /query /tn "clashmetafw-run"`, { stdio: 'pipe' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function resetAppConfig(): void {
+  if (process.platform === 'win32') {
+    spawn(
+      'cmd',
+      [
+        '/C',
+        `"timeout /t 2 /nobreak >nul && rmdir /s /q "${dataDir()}" && start "" "${exePath()}""`
+      ],
+      {
+        shell: true,
+        detached: true
+      }
+    ).unref()
+  } else {
+    const script = `while kill -0 ${process.pid} 2>/dev/null; do
+  sleep 0.1
+done
+  rm -rf '${dataDir()}'
+  ${process.argv.join(' ')} & disown
+exit
+`
+    spawn('sh', ['-c', `"${script}"`], {
+      shell: true,
+      detached: true,
+      stdio: 'ignore'
+    })
+  }
+  app.quit()
+}
