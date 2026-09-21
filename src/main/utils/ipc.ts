@@ -122,6 +122,7 @@ import { subStoreCollections, subStoreSubs } from '../core/subStoreApi'
 import { exportGistAgeSecretKey, generateGistAgeKeyPair, getGistUrl } from '../resolve/gistApi'
 import { startMonitor } from '../resolve/trafficMonitor'
 import { closeFloatingWindow, showContextMenu, showFloatingWindow } from '../resolve/floatingWindow'
+import { addProfileUpdater, removeProfileUpdater } from '../core/profileUpdater'
 import {
   clearTrafficUsage,
   importTrafficUsage,
