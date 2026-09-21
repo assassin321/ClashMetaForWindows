@@ -368,7 +368,6 @@ app
       const initialDeepLink = findDeepLink(process.argv)
       if (initialDeepLink) {
         queueLaunchTarget({ type: 'deep-link', value: initialDeepLink })
-      } else {}
       }
     }
     launchTargetsReady = true
