@@ -116,6 +116,7 @@ export async function initProfileUpdater(): Promise<void> {
         }
       }
     }
+  }
 
   if (currentItem?.type === 'remote' && currentItem.autoUpdate && currentItem.interval) {
     const currentId = currentItem.id
