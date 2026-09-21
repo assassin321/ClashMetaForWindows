@@ -87,6 +87,104 @@ function processRulesWithOffset(ruleStrings: string[], currentRules: string[], i
   return { normalRules, insertRules: rules }
 }
 
+export async function generateProfile(
+  pendingControledMihomoConfig?: Partial<IMihomoConfig>,
+  options: GenerateProfileOptions = {}
+): Promise<GenerateProfileResult> {
+  // 第一阶段：并行读取互不依赖的配置（强制重读 profileConfig 完成后再进入第二阶段，保证缓存一致）。
+  const [profileConfig, appConfig] = await Promise.all([getProfileConfig(true), getAppConfig()])
+  const { current } = profileConfig
+  const profileId = options.profileId ?? current
+  // 第二阶段：仅依赖 profileId 的读取并行执行。
+  const [currentProfileItem, baseProfile, overrideIds, fetchedControledMihomoConfig] =
+    await Promise.all([
+      getProfileItem(profileId),
+      options.baseProfile ?? getProfile(profileId),
+      getOrderedOverrideIds(profileId, options.profileOverrideIds, options.globalOverrideIds),
+      getControledMihomoConfig()
+    ])
+  const ageSecretKey = options.ageSecretKey ?? currentProfileItem?.ageSecretKey ?? ''
+  let controledMihomoConfig = pendingControledMihomoConfig ?? fetchedControledMihomoConfig
+  const {
+    diffWorkDir = false,
+    controlDns: controlDnsSetting = DEFAULT_CONTROL_DNS,
+    controlSniff = DEFAULT_CONTROL_SNIFF,
+    useNameserverPolicy
+  } = appConfig
+  // DNS 保护先于覆写和脚本处理，开关在内核应用成功后同步。
+  const dnsGuard = evaluateDnsOverrideGuard(
+    profileId ?? 'default',
+    baseProfile,
+    controlDnsSetting,
+    options.updateRuntimeConfig !== false
+  )
+  const { controlDns } = dnsGuard
+  const profileWithNormalOverride = await applyOverrides(
+    baseProfile,
+    overrideIds.normal,
+    ageSecretKey
+  )
+  const profileWithRuleOverride = await applyRuleOverride(profileId, profileWithNormalOverride)
+  const currentProfile = await applyOverrides(
+    profileWithRuleOverride,
+    ageSecretKey
+  )
+
+  // 根据开关状态过滤控制配置
+  controledMihomoConfig = { ...controledMihomoConfig }
+  if (!controlDns) {
+    delete controledMihomoConfig.dns
+    delete controledMihomoConfig.hosts
+  }
+  if (!controlSniff) {
+    delete controledMihomoConfig.sniffer
+  }
+  if (!useNameserverPolicy) {
+    delete controledMihomoConfig?.dns?.['nameserver-policy']
+  }
+
+  const profile = deepMerge(currentProfile, controledMihomoConfig)
+  // 关闭 DNS 覆写时，如果最终配置没有启用的 DNS 配置，清空 dns-hijack 避免请求被劫持但无法处理
+  if (!controlDns && profile.tun && !profile.dns?.enable) {
+    profile.tun = { ...profile.tun, 'dns-hijack': [] }
+  }
+  // 删除空的局域网允许列表，避免局域网访问异常
+  if (!profile['lan-allowed-ips']?.length) {
+    delete profile['lan-allowed-ips']
+  }
+  // WebUI 仅在外部控制器启用时有效；关闭面板时不向 Mihomo 写入下载地址。
+  const partialProfile = profile as Partial<IMihomoConfig>
+  if (profile['external-controller'] === '') {
+    delete partialProfile['external-controller']
+    delete partialProfile['external-ui']
+    delete partialProfile['external-ui-url']
+    delete partialProfile['external-controller-cors']
+  } else if (profile['external-ui'] === '') {
+    delete partialProfile['external-ui']
+    delete partialProfile['external-ui-url']
+  }
+  const nextRuntimeConfigStr = stringify(profile)
+  const coreProfile = { ...profile }
+  // 日志解析启动检测需要基础日志；预览和 Gist 保留用户的实际配置。
+  if (['info', 'debug'].includes(coreProfile['log-level']) === false) {
+    coreProfile['log-level'] = 'info'
+  }
+  const coreConfigStr = stringify(coreProfile)
+  if (diffWorkDir && options.outputPath === undefined) {
+    await prepareProfileWorkDir(profileId)
+  }
+  await atomicWriteFile(
+    options.outputPath ??
+      (diffWorkDir ? mihomoWorkConfigPath(profileId) : mihomoWorkConfigPath('work')),
+    coreConfigStr
+  )
+  if (options.updateRuntimeConfig !== false) {
+    runtimeConfig = profile
+    runtimeConfigStr = nextRuntimeConfigStr
+  }
+  return { profileId, dnsGuard }
+}
+
 async function applyRuleOverride(
   current: string | undefined,
   profile: IMihomoConfig
@@ -180,6 +278,22 @@ async function prepareProfileWorkDir(current: string | undefined): Promise<void>
     copy('BundleMRS.7z'),
     copy('Model.bin')
   ])
+}
+
+async function getOrderedOverrideIds(
+  current: string | undefined,
+  profileOverrideIds?: string[],
+  globalOverrideIds?: string[]
+): Promise<{
+  normal: string[]
+}> {
+  const globalOverride = globalOverrideIds ?? (await globalOverrideIdsNow())
+  const override = profileOverrideIds ?? (await getProfileItem(current))?.override ?? []
+  const orderedOverrideIds = [...new Set(globalOverride.concat(override))]
+
+  return {
+    normal: orderedOverrideIds.filter((id) => true)
+  }
 }
 
 async function applyOverrides(

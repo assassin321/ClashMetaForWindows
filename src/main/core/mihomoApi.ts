@@ -436,6 +436,25 @@ export const mihomoHotReloadConfig = async (): Promise<void> => {
     await restartCore()
     return
   }
+  const { profileId: current, dnsGuard } = await generateProfile()
+  const { diffWorkDir = false } = await getAppConfig()
+  const configPath = diffWorkDir ? mihomoWorkConfigPath(current) : mihomoWorkConfigPath('work')
+  mihomoApiLogger.info(`hot reload config path: ${configPath}`)
+  const instance = await getAxios()
+  try {
+    await instance.put('/configs?force=true', { path: configPath })
+  } catch (error) {
+    if (hasCoreProcess()) throw error
+    mihomoApiLogger.warn('Core exited before hot reload completed, restarting core', error)
+    await restartCore()
+    return
+  }
+  mihomoApiLogger.info('hot reload config completed')
+  try {
+    await syncControlDnsAfterApply(dnsGuard)
+  } catch (error) {
+    mihomoApiLogger.warn('Failed to sync DNS override state after hot reload', error)
+  }
   try {
     const { scheduleRuntimeConfigUpload } = await import('../resolve/gistApi')
     scheduleRuntimeConfigUpload()
