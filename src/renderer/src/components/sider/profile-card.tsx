@@ -258,7 +258,7 @@ const ProfileCard: React.FC<Props> = (props) => {
           </CardBody>
           <CardFooter className="pt-1">
             <div
-              title={`共 ${items?.length ?? 0} 个订阅，远程 ${remoteCount}，本地 ${localCount}}
+              title={`共 ${items?.length ?? 0} 个订阅，远程 ${remoteCount}，本地 ${localCount}`}
               className={`flex w-full min-w-0 items-center justify-between gap-2 ${match ? 'text-primary-foreground' : 'text-foreground'}`}
             >
               <h4 className="shrink-0 text-md font-bold">订阅管理</h4>
