@@ -96,7 +96,7 @@ const GeneralConfig: React.FC = () => {
     envType = [platform === 'win32' ? 'powershell' : 'bash'],
     autoCheckUpdate = false,
     autoUpdateProfileOnStart = true,
-    silentUpdate = true,
+    silentUpdate = false,
     githubProxy = 'auto',
     appTheme = 'system',
     language = 'zh-CN',

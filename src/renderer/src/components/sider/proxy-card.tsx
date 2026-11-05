@@ -16,7 +16,7 @@ const ProxyCard: React.FC<Props> = (props) => {
   const { t } = useTranslation()
   const { appConfig } = useAppConfig()
   const { iconOnly } = props
-  const { proxyCardStatus = 'col-span-1', disableAnimations = true } = appConfig || {}
+  const { proxyCardStatus = 'col-span-2', disableAnimations = true } = appConfig || {}
   const location = useLocation()
   const navigate = useNavigate()
   const match = location.pathname.includes('/proxies')

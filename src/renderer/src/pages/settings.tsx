@@ -65,14 +65,14 @@ const Settings: React.FC = () => {
       <MihomoIcon className="h-10 w-10 mr-2" />
       <h3 className="text-2xl font-bold">Clash Meta For Windows</h3>
       </div>
-      <GeneralConfig />
-      <SubStoreConfig />
+      <Actions />
       <SiderConfig />
-      <WebdavConfig />
       <MihomoConfig />
       <ShortcutConfig />
       <LocalBackupConfig />
-      <Actions />
+      <WebdavConfig />
+      <SubStoreConfig />
+      <GeneralConfig />
     </BasePage>
   )
 }
