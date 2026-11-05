@@ -15,7 +15,6 @@ import { useDnsOverrideAutoDisabledNotice } from '@renderer/hooks/use-dns-overri
 import { createTourDriver, getDriver, startTourIfNeeded } from '@renderer/utils/tour'
 import 'driver.js/dist/driver.css'
 import { useTranslation } from 'react-i18next'
-import { DEFAULT_ENABLE_TRAFFIC_LOGGER } from '../../shared/appConfig'
 import MihomoIcon from './components/base/mihomo-icon'
 import { getSiderCardByPath } from './utils/sider'
 import { markInitialContentPartReady } from './utils/startup'

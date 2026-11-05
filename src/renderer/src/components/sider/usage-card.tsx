@@ -11,7 +11,6 @@ import { MdOutlineDataUsage } from 'react-icons/md'
 import { useTranslation } from 'react-i18next'
 import useSWR from 'swr'
 import dayjs from '@renderer/utils/dayjs'
-import { DEFAULT_ENABLE_TRAFFIC_LOGGER } from '../../../../shared/appConfig'
 
 interface Props {
   iconOnly?: boolean
