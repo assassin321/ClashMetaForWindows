@@ -188,8 +188,8 @@ async function createWindowInternal(): Promise<void> {
   mainWindow = new BrowserWindow({
     minWidth: 800,
     minHeight: 600,
-    width: savedState.width,
-    height: savedState.height,
+    width: 800,
+    height: 600,
     x: savedState.x,
     y: savedState.y,
     show: false,
