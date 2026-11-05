@@ -66,12 +66,12 @@ const Settings: React.FC = () => {
       <h3 className="text-2xl font-bold">Clash Meta For Windows</h3>
       </div>
       <Actions />
-      <SiderConfig />
       <MihomoConfig />
+      <SiderConfig />
       <ShortcutConfig />
+      <SubStoreConfig />
       <LocalBackupConfig />
       <WebdavConfig />
-      <SubStoreConfig />
       <GeneralConfig />
     </BasePage>
   )

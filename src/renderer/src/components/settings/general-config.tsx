@@ -85,7 +85,7 @@ const GeneralConfig: React.FC = () => {
     showFloatingWindow: showFloating = false,
     spinFloatingIcon = true,
     floatingWindowCompatMode = true,
-    disableHardwareAcceleration = false,
+    disableHardwareAcceleration = true,
     useWindowFrame = false,
     rememberSelectedSiderCard = false,
     lockSiderCards = false,

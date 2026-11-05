@@ -54,7 +54,7 @@ export const defaultConfig: IAppConfig = {
   controlDns: DEFAULT_CONTROL_DNS,
   controlSniff: DEFAULT_CONTROL_SNIFF,
   floatingWindowCompatMode: true,
-  disableHardwareAcceleration: false,
+  disableHardwareAcceleration: true,
   hideConnectionCardWave: false,
   nameserverPolicy: DEFAULT_NAMESERVER_POLICY,
   siderOrder: DEFAULT_SIDER_ORDER,

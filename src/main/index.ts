@@ -112,7 +112,7 @@ setupPlatformSpecifics()
 async function initHardwareAcceleration(): Promise<void> {
   try {
     await initBasic()
-    const { disableHardwareAcceleration = false } = await getAppConfig()
+    const { disableHardwareAcceleration = true } = await getAppConfig()
     if (disableHardwareAcceleration) {
       app.disableHardwareAcceleration()
     }
