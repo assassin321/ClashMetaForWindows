@@ -354,6 +354,84 @@ const Mihomo: React.FC = () => {
       <MihomoIcon className="h-10 w-10 mr-2" />
       <h3 className="text-2xl font-bold">Clash Meta For Windows</h3>
       </div>
+        {/* 内核选择设置 */}
+        <SettingCard>
+          <div className="rounded-md border p-2">
+            <SettingItem
+              title={
+                <div className="flex items-center gap-2">
+                  <span>{t('mihomo.coreVersion')}</span>
+                  {core === 'mihomo-specific' && specificVersion && (
+                    <Chip size="sm" variant="flat" color="primary">
+                      {specificVersion}
+                    </Chip>
+                  )}
+                </div>
+              }
+              actions={
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    isIconOnly
+                    title={t('mihomo.upgradeCore')}
+                    variant="light"
+                    isLoading={upgrading}
+                    onPress={async () => {
+                      try {
+                        setUpgrading(true)
+                        await mihomoUpgrade()
+                        setTimeout(() => {
+                          PubSub.publish('mihomo-core-changed')
+                        }, 2000)
+                        if (platform !== 'win32') {
+                          new Notification(t('mihomo.coreAuthLost'), {
+                            body: t('mihomo.coreUpgradeSuccess')
+                          })
+                        }
+                      } catch (e) {
+                        if (typeof e === 'string' && e.includes('already using latest version')) {
+                          new Notification(t('mihomo.alreadyLatestVersion'))
+                        } else {
+                          toast.error(String(e))
+                        }
+                      } finally {
+                        setUpgrading(false)
+                      }
+                    }}
+                  >
+                    <IoMdCloudDownload className="text-lg" />
+                  </Button>
+                  <Button size="sm" variant="light" onPress={handleOpenModal}>
+                    {t('mihomo.selectSpecificVersion')}
+                  </Button>
+                </div>
+              }
+              divider={core === 'mihomo-specific'}
+            >
+              <Select
+                className="w-37.5"
+                size="sm"
+                aria-label={t('mihomo.selectCoreVersion')}
+                selectedKeys={new Set([core])}
+                disallowEmptySelection={true}
+                onSelectionChange={async (v) => {
+                  const selectedCore = v.currentKey as
+                    'mihomo' | 'mihomo-alpha' | 'mihomo-specific'
+                  if (selectedCore === 'mihomo-specific' && !specificVersion) {
+                    handleOpenModal()
+                  } else {
+                    handleConfigChangeWithRestart('core', selectedCore)
+                  }
+                }}
+              >
+                <SelectItem key="mihomo">{t(CoreMap['mihomo'])}</SelectItem>
+                <SelectItem key="mihomo-alpha">{t(CoreMap['mihomo-alpha'])}</SelectItem>
+                <SelectItem key="mihomo-specific">{t(CoreMap['mihomo-specific'])}</SelectItem>
+              </Select>
+            </SettingItem>
+          </div>
+        </SettingCard>
+
         {/* 常规内核设置 */}
         <SettingCard>
           <SettingItem title={t('mihomo.mixedPort')} divider>

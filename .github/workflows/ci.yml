@@ -4,11 +4,7 @@ on:
   pull_request:
   push:
     branches:
-      - main
-    paths-ignore:
-      - 'README.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/workflows/issues.yml'
+      - dev
 
 permissions:
   contents: read
